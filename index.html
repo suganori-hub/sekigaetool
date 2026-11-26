@@ -254,12 +254,44 @@ header.top{
 .sbtn.main{background:linear-gradient(90deg,#ff3d71,#ff8a00);border-color:#fff}
 .sbtn[hidden]{display:none}
 
+.sel{border:1.5px solid var(--line);border-radius:10px;padding:7px 8px;font-size:14px;background:#fff}
+.chip.rowfix::before{content:attr(data-row);position:absolute;top:-7px;left:-5px;font-size:9px;background:#3dd6ff;color:#003b4d;border-radius:6px;padding:0 3px;line-height:14px}
+.rf-item{background:#eafaff;border-color:#9fe3f7}
+
+/* ===== 結果の全画面表示 ===== */
+.rview{
+  position:fixed;inset:0;z-index:1100;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 50% 0%,#24306e 0%,#0d1233 60%,#070a1e 100%);
+}
+.rview[hidden]{display:none}
+.rboard{display:flex;flex-direction:column;align-items:center;gap:var(--gap,12px)}
+.rview.teacher .rboard{flex-direction:column-reverse}
+.rdesk{
+  width:calc(var(--cs) * 2);max-width:60vw;height:calc(var(--cs) * .32);min-height:28px;border-radius:12px;display:grid;place-items:center;
+  font-weight:900;letter-spacing:.6em;padding-left:.6em;font-size:calc(var(--cs) * .15);color:#fff;
+  background:linear-gradient(135deg,#5a3c22,#8f6236);box-shadow:0 4px 0 #2a1d10
+}
+.rgrid{display:grid;gap:var(--gap,12px);grid-template-columns:repeat(var(--cols),var(--cs))}
+.rseat{
+  width:var(--cs);height:calc(var(--cs) * .74);border-radius:calc(var(--cs) * .1);
+  display:grid;place-items:center;background:#fff;color:#1b2150;font-weight:900;
+  font-size:calc(var(--cs) * .46);font-variant-numeric:tabular-nums;line-height:1;
+  box-shadow:0 calc(var(--cs) * .04) 0 #b9c1e6,0 8px 24px rgba(0,0,0,.35);
+  animation:fresh .6s cubic-bezier(.2,1.6,.4,1) both;animation-delay:var(--dl,0s)
+}
+.rseat.off{visibility:hidden;animation:none}
+.rseat.empty{color:#c9cfdc}
+.rctrl{position:fixed;top:14px;right:16px;display:flex;gap:8px;opacity:.35;transition:opacity .2s}
+.rctrl:hover,.rview.touch .rctrl{opacity:1}
+.rbtn{border:2px solid rgba(255,255,255,.6);background:rgba(0,0,0,.45);color:#fff;padding:9px 14px;border-radius:999px;font-weight:800;font-size:14px}
+.rbtn:hover{background:rgba(255,255,255,.2)}
+
 /* ===== 印刷 ===== */
 @page{size:A4 portrait;margin:10mm}
 @media print{
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   html,body{background:#fff !important}
-  header.top,.panel,.toolbar,.status,.big-actions,.overlay,.modal,#toast{display:none !important}
+  header.top,.panel,.toolbar,.status,.big-actions,.overlay,.modal,#toast,.rview{display:none !important}
   .layout{display:block;padding:0;margin:0;max-width:none}
   .stage-area{display:block}
   .board-wrap{width:190mm;margin:0 auto;padding:0;border:none;box-shadow:none;border-radius:0;break-inside:avoid;page-break-inside:avoid}
@@ -283,6 +315,7 @@ header.top{
     <button class="tbtn" id="tSound">🔊 効果音 ON</button>
     <button class="tbtn" id="tFx">🎆 演出 ON</button>
     <button class="tbtn" id="tView">👀 生徒視点</button>
+    <button class="tbtn" id="tFull">🖥 全画面表示</button>
     <button class="tbtn" id="tPrint">🖨 印刷</button>
   </div>
 </header>
@@ -290,12 +323,6 @@ header.top{
 <main class="layout">
   <!-- ===== 設定パネル ===== -->
   <aside class="panel">
-    <section class="card-sec">
-      <h2>🏫 クラス名</h2>
-      <input type="text" class="text-in" id="className" maxlength="40" placeholder="例：3年2組">
-      <p class="note">印刷時の座席表タイトルに使われます。</p>
-    </section>
-
     <section class="card-sec">
       <h2>📐 座席グリッド <span class="badge" id="gridBadge">6×6</span></h2>
       <div class="row">
@@ -334,6 +361,21 @@ header.top{
         <button class="btn danger small" id="btnClearLocks">固定をすべて解除</button>
       </div>
       <p class="note">「固定」モードで座席をクリックして番号を選びます。同じ番号は複数の席に固定できません。</p>
+    </section>
+
+    <section class="card-sec">
+      <h2>📏 横列の指定 <span class="badge" id="rfBadge">0件</span></h2>
+      <div class="row">
+        <select class="sel" id="rfNum"></select>
+        <span>を</span>
+        <select class="sel" id="rfRow"></select>
+        <button class="btn primary small" id="rfAdd">追加</button>
+      </div>
+      <div class="lock-list" id="rfList"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn danger small" id="rfClear">横列の指定をすべて解除</button>
+      </div>
+      <p class="note">指定した番号は、その横列（教卓から数えて前から何番目の横一列か）のどこかにランダムで配置されます。視力や配慮が必要な生徒を前の列にしたいときなどに使います。座席の固定がある番号は固定が優先されます。</p>
     </section>
 
     <section class="card-sec">
@@ -408,6 +450,15 @@ header.top{
   </div>
 </div>
 
+<!-- ===== 結果の全画面表示 ===== -->
+<div class="rview" id="rview" hidden>
+  <div class="rboard" id="rboard"><div class="rdesk">教卓</div><div class="rgrid" id="rgrid"></div></div>
+  <div class="rctrl">
+    <button class="rbtn" id="rvView">🔄 視点切替</button>
+    <button class="rbtn" id="rvClose">✖ 閉じる</button>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -428,9 +479,9 @@ function defaults() {
   return {
     cols: 6, rows: 6,
     active: Array(MAXC * MAXR).fill(true),
-    nums, locks: {}, result: {},
+    nums, locks: {}, result: {}, rowFix: {},
     view: 'student', sound: true, effects: true,
-    className: '', avoidSame: true
+    avoidSame: true
   };
 }
 let S = defaults();
@@ -459,7 +510,11 @@ function load() {
     if (d.view === 'student' || d.view === 'teacher') S.view = d.view;
     if (typeof d.sound === 'boolean') S.sound = d.sound;
     if (typeof d.effects === 'boolean') S.effects = d.effects;
-    if (typeof d.className === 'string') S.className = d.className.slice(0, 40);
+    S.rowFix = {};
+    if (d.rowFix && typeof d.rowFix === 'object') for (const [k, v] of Object.entries(d.rowFix)) {
+      const n = +k;
+      if (intIn(n, 1, MAXN) && intIn(v, 0, MAXR - 1)) S.rowFix[n] = v;
+    }
     if (typeof d.avoidSame === 'boolean') S.avoidSame = d.avoidSame;
   } catch (e) {}
 }
@@ -475,8 +530,24 @@ function enabledNums() { const a = []; for (let n = 1; n <= MAXN; n++) if (S.num
 function effectiveLocks() {
   return Object.entries(S.locks).map(([k, v]) => ({ i: +k, n: v })).filter(o => inGrid(o.i) && S.active[o.i]);
 }
-function seatLabel(i) { const [r, c] = rc(i); return `左から${c + 1}列目・前から${r + 1}番目`; }
-function seatShort(i) { const [r, c] = rc(i); return `左${c + 1}・前${r + 1}`; }
+function seatLabel(i) { const [r, c] = rc(i); return `前から${r + 1}番目の横列・左から${c + 1}番目`; }
+function seatShort(i) { const [r, c] = rc(i); return `前${r + 1}・左${c + 1}`; }
+const rowLabel = r => `前から${r + 1}番目の横列`;
+/* 有効な横列指定（番号ON・座席固定されていない番号のみ） */
+function effectiveRowFix() {
+  const lockedNums = new Set(effectiveLocks().map(l => l.n));
+  return Object.entries(S.rowFix).map(([n, r]) => ({ n: +n, r }))
+    .filter(o => S.nums[o.n] && !lockedNums.has(o.n));
+}
+/* 横列ごとの「固定されていない使う席」 */
+function freeSeatsByRow() {
+  const m = {};
+  for (let r = 0; r < S.rows; r++) {
+    m[r] = [];
+    for (let c = 0; c < S.cols; c++) { const i = idx(r, c); if (S.active[i] && S.locks[i] == null) m[r].push(i); }
+  }
+  return m;
+}
 function rnd(n) {
   if (window.crypto && crypto.getRandomValues) { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
   return Math.floor(Math.random() * n);
@@ -507,8 +578,29 @@ function analyze() {
     if (arr.length > 1) { issues.push(`${n}番が${arr.length}つの席に重複して固定されています`); arr.forEach(i => dupSeats.add(i)); }
   });
   locks.forEach(l => { if (!S.nums[l.n]) { issues.push(`固定中の${l.n}番は出席番号がOFFです`); badSeats.add(l.i); } });
+  // 横列の指定
+  const badRowNums = new Set();
+  locks.forEach(l => {
+    const r = S.rowFix[l.n];
+    if (r != null && S.nums[l.n] && rc(l.i)[0] !== r) {
+      issues.push(`${l.n}番は「${rowLabel(r)}」に指定されていますが、固定席は前から${rc(l.i)[0] + 1}番目の横列です`);
+      badRowNums.add(l.n);
+    }
+  });
+  const rf = effectiveRowFix(), perRow = {};
+  rf.forEach(o => {
+    if (o.r >= S.rows) { issues.push(`${o.n}番の指定「${rowLabel(o.r)}」がグリッドの外です（縦${S.rows}行）`); badRowNums.add(o.n); }
+    else (perRow[o.r] = perRow[o.r] || []).push(o.n);
+  });
+  const free = freeSeatsByRow();
+  Object.entries(perRow).forEach(([r, arr]) => {
+    if (arr.length > free[r].length) {
+      issues.push(`${rowLabel(+r)}に${arr.length}人指定されていますが、空いている使う席は${free[r].length}席です`);
+      arr.forEach(n => badRowNums.add(n));
+    }
+  });
   const diff = seats.length - nums.length;
-  return { seats, nums, locks, issues, dupSeats, badSeats, diff, ok: nums.length > 0 && diff === 0 && issues.length === 0 };
+  return { seats, nums, locks, rf, issues, dupSeats, badSeats, badRowNums, diff, ok: nums.length > 0 && diff === 0 && issues.length === 0 };
 }
 function resultValid() {
   const seats = activeSeats(), nums = enabledNums();
@@ -520,6 +612,9 @@ function resultValid() {
     used.add(n);
   }
   for (const l of effectiveLocks()) if (S.result[l.i] !== l.n) return false;
+  const where = {};
+  seats.forEach(i => { where[S.result[i]] = i; });
+  for (const o of effectiveRowFix()) if (where[o.n] == null || rc(where[o.n])[0] !== o.r) return false;
   return true;
 }
 
@@ -529,22 +624,36 @@ function resultValid() {
 function makeShuffle(an) {
   const lockedSeat = new Map(an.locks.map(l => [l.i, l.n]));
   const lockedNums = new Set(an.locks.map(l => l.n));
-  const free = an.seats.filter(i => !lockedSeat.has(i));
-  const pool = an.nums.filter(n => !lockedNums.has(n));
+  const rowNums = new Set(an.rf.map(o => o.n));
+  const freeByRow = freeSeatsByRow();
+  const pool = an.nums.filter(n => !lockedNums.has(n) && !rowNums.has(n));
   const prev = resultValid() ? { ...S.result } : null;
+  const attempt = () => {
+    const map = {};
+    lockedSeat.forEach((n, i) => { map[i] = n; });
+    const used = new Set(lockedSeat.keys());
+    // ① 横列指定の番号を、その横列の空き席にランダム配置
+    for (let r = 0; r < S.rows; r++) {
+      const ns = shuffleArr(an.rf.filter(o => o.r === r).map(o => o.n));
+      const seats = shuffleArr(freeByRow[r].slice());
+      ns.forEach((n, k) => { map[seats[k]] = n; used.add(seats[k]); });
+    }
+    // ② 残りの席に残りの番号をランダム配置
+    const rest = an.seats.filter(i => !used.has(i));
+    const p = shuffleArr(pool.slice());
+    rest.forEach((i, k) => { map[i] = p[k]; });
+    return map;
+  };
   const tries = (S.avoidSame && prev) ? 500 : 1;
   let best = null, bestScore = Infinity;
   for (let t = 0; t < tries; t++) {
-    const p = shuffleArr(pool.slice());
+    const m = attempt();
     let score = 0;
-    if (prev) free.forEach((i, k) => { if (prev[i] === p[k]) score++; });
-    if (score < bestScore) { bestScore = score; best = p; }
+    if (prev) an.seats.forEach(i => { if (!lockedSeat.has(i) && prev[i] === m[i]) score++; });
+    if (score < bestScore) { bestScore = score; best = m; }
     if (score === 0) break;
   }
-  const map = {};
-  lockedSeat.forEach((n, i) => { map[i] = n; });
-  free.forEach((i, k) => { map[i] = best[k]; });
-  return map;
+  return best;
 }
 
 /* =========================================================
@@ -560,14 +669,16 @@ function renderHeader() {
 }
 
 function renderPanel() {
-  $('#className').value = S.className;
   $('#vCols').textContent = S.cols; $('#vRows').textContent = S.rows;
   $('#gridBadge').textContent = `${S.cols}×${S.rows}＝${S.cols * S.rows}席`;
   const nums = enabledNums();
   $('#numBadge').textContent = `${nums.length}人`;
   const lockedNums = new Set(effectiveLocks().map(l => l.n));
   let ch = '';
-  for (let n = 1; n <= MAXN; n++) ch += `<button class="chip${S.nums[n] ? ' on' : ''}${lockedNums.has(n) ? ' locked' : ''}" data-n="${n}">${n}</button>`;
+  for (let n = 1; n <= MAXN; n++) {
+    const rf = S.rowFix[n];
+    ch += `<button class="chip${S.nums[n] ? ' on' : ''}${lockedNums.has(n) ? ' locked' : ''}${rf != null ? ' rowfix' : ''}" data-n="${n}"${rf != null ? ` data-row="前${rf + 1}"` : ''}>${n}</button>`;
+  }
   $('#chips').innerHTML = ch;
   const an = analyze();
   const locks = an.locks.slice().sort((a, b) => a.n - b.n);
@@ -575,6 +686,22 @@ function renderPanel() {
   $('#lockList').innerHTML = locks.length
     ? locks.map(l => `<span class="lock-item${(an.dupSeats.has(l.i) || an.badSeats.has(l.i)) ? ' bad' : ''}">🔒 ${l.n}番 → ${seatShort(l.i)}<button data-del="${l.i}" title="解除">✕</button></span>`).join('')
     : '<span class="hint">固定している席はありません</span>';
+  // 横列の指定
+  const curNum = $('#rfNum').value, curRow = $('#rfRow').value;
+  $('#rfNum').innerHTML = '<option value="">番号</option>' + nums.map(n => `<option value="${n}">${n}番</option>`).join('');
+  let ro = '';
+  for (let r = 0; r < S.rows; r++) ro += `<option value="${r}">${rowLabel(r)}</option>`;
+  $('#rfRow').innerHTML = ro;
+  if (nums.includes(+curNum)) $('#rfNum').value = curNum;
+  if (+curRow < S.rows) $('#rfRow').value = curRow || '0';
+  const rfAll = Object.entries(S.rowFix).map(([n, r]) => ({ n: +n, r })).sort((a, b) => a.r - b.r || a.n - b.n);
+  $('#rfBadge').textContent = `${rfAll.length}件`;
+  $('#rfList').innerHTML = rfAll.length
+    ? rfAll.map(o => {
+        const note = !S.nums[o.n] ? '（OFF・無視）' : lockedNums.has(o.n) ? '（固定優先）' : '';
+        return `<span class="lock-item rf-item${an.badRowNums.has(o.n) ? ' bad' : ''}">📏 ${o.n}番 → 前${o.r + 1}${note}<button data-rfdel="${o.n}" title="解除">✕</button></span>`;
+      }).join('')
+    : '<span class="hint">横列を指定している番号はありません</span>';
   $('#optAvoid').checked = S.avoidSame;
 }
 
@@ -584,7 +711,8 @@ function renderStatus() {
   const pills = `<div class="pills">
     <span class="pill">👥 生徒 <b>${an.nums.length}</b> 人</span>
     <span class="pill">🪑 使う席 <b>${an.seats.length}</b> 席</span>
-    <span class="pill">🔒 固定 <b>${an.locks.length}</b></span></div>`;
+    <span class="pill">🔒 固定 <b>${an.locks.length}</b></span>
+    <span class="pill">📏 横列指定 <b>${an.rf.length}</b></span></div>`;
   const msgs = [];
   if (an.nums.length === 0) msgs.push('⚠ 出席番号が1つもONになっていません');
   else if (an.diff > 0) msgs.push(`⚠ 使う席が ${an.diff} 席多いです（空席ができます）。席を減らすか「人数に合わせて自動調整」を押してください`);
@@ -627,7 +755,7 @@ function renderBoard(fresh) {
   }));
   grid.innerHTML = html;
   const d = new Date();
-  $('#printTitle').innerHTML = `<h1>${esc(S.className ? S.className + ' ' : '')}座席表</h1>
+  $('#printTitle').innerHTML = `<h1>座席表</h1>
     <span>${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ／ ${S.view === 'student' ? '生徒視点' : '先生視点'} ／ ${an.seats.length}席</span>`;
 }
 
@@ -652,7 +780,29 @@ document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click'
   save(); renderAll();
 }));
 
-$('#className').addEventListener('input', e => { S.className = e.target.value.slice(0, 40); save(); renderBoard(); });
+/* 横列の指定 */
+$('#rfAdd').addEventListener('click', () => {
+  const n = parseInt($('#rfNum').value, 10), r = parseInt($('#rfRow').value, 10);
+  if (!n) { toast('番号を選んでください'); return; }
+  if (!(r >= 0 && r < S.rows)) { toast('横列を選んでください'); return; }
+  const lk = effectiveLocks().find(l => l.n === n);
+  if (lk && rc(lk.i)[0] !== r) { toast(`${n}番は「${seatLabel(lk.i)}」に固定されています。先に固定を解除してください`); return; }
+  // 横列の定員チェック
+  const others = effectiveRowFix().filter(o => o.r === r && o.n !== n).length;
+  const cap = freeSeatsByRow()[r].length;
+  if (!lk && others + 1 > cap) { toast(`${rowLabel(r)}の空いている使う席（${cap}席）がいっぱいです`); return; }
+  S.rowFix[n] = r;
+  save(); renderAll(); toast(`📏 ${n}番を「${rowLabel(r)}」に指定しました`);
+});
+$('#rfList').addEventListener('click', e => {
+  const b = e.target.closest('[data-rfdel]'); if (!b) return;
+  delete S.rowFix[+b.dataset.rfdel]; save(); renderAll();
+});
+$('#rfClear').addEventListener('click', () => {
+  if (!Object.keys(S.rowFix).length) return;
+  if (!confirm('横列の指定をすべて解除しますか？')) return;
+  S.rowFix = {}; save(); renderAll();
+});
 
 $('#btnBulk').addEventListener('click', () => {
   const n = Math.min(MAXN, Math.max(1, parseInt($('#bulkN').value, 10) || 0));
@@ -1116,8 +1266,9 @@ async function runShow(map) {
   ov.hidden = false; ov.classList.remove('party', 'titlehide');
   document.body.classList.add('noscroll');
   $('#btnSkip').textContent = '⏭ スキップ'; $('#btnCloseStage').hidden = true;
-  $('#stageTitle').textContent = (S.className ? S.className + ' ' : '') + '席替えSHOW';
+  $('#stageTitle').textContent = '席替えSHOW';
   setBanner(null); setCountdown(null);
+  FS.enter();
   SFX.ensure(); FX.start(); buildStage(map);
   const nums = enabledNums();
 
@@ -1207,7 +1358,70 @@ function closeShow() {
   $('#overlay').hidden = true;
   document.body.classList.remove('noscroll');
   renderAll(true);
+  openResult();
 }
+
+/* =========================================================
+   結果の全画面表示（席だけを拡大）
+   ========================================================= */
+const FS = {
+  is() { return !!(document.fullscreenElement || document.webkitFullscreenElement); },
+  enter() {
+    if (this.is()) return;
+    const el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (f) { try { const p = f.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  },
+  exit() {
+    if (!this.is()) return;
+    const f = document.exitFullscreen || document.webkitExitFullscreen;
+    if (f) { try { const p = f.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  }
+};
+let rvOpen = false;
+function sizeResult() {
+  const g = $('#rgrid'), b = $('#rboard');
+  const gap = Math.max(8, Math.min(22, Math.floor(Math.min(window.innerWidth, window.innerHeight) / 45)));
+  const availW = window.innerWidth * 0.95 - gap * (S.cols - 1);
+  const availH = window.innerHeight * 0.93 - gap * S.rows;
+  const cs = Math.floor(Math.max(40, Math.min(420, availW / S.cols, availH / (S.rows * 0.74 + 0.32))));
+  [g, b].forEach(el => { el.style.setProperty('--cs', cs + 'px'); el.style.setProperty('--gap', gap + 'px'); });
+  g.style.setProperty('--cols', S.cols);
+}
+function buildResult() {
+  const rv = $('#rview');
+  rv.classList.toggle('teacher', S.view === 'teacher');
+  rv.classList.toggle('touch', window.matchMedia && matchMedia('(hover: none)').matches);
+  sizeResult();
+  let html = '';
+  displayRows().forEach((row, dr) => row.forEach((i, dc) => {
+    if (!S.active[i]) html += '<div class="rseat off"></div>';
+    else html += `<div class="rseat" style="--dl:${((dr + dc) * 0.04).toFixed(2)}s">${S.result[i]}</div>`;
+  }));
+  $('#rgrid').innerHTML = html;
+}
+function openResult() {
+  if (!resultValid()) { toast('まだ席替えの結果がありません'); return; }
+  FS.enter();
+  rvOpen = true;
+  $('#rview').hidden = false;
+  document.body.classList.add('noscroll');
+  buildResult();
+}
+function closeResult() {
+  rvOpen = false;
+  $('#rview').hidden = true;
+  document.body.classList.remove('noscroll');
+  FS.exit();
+  renderAll();
+}
+$('#rvClose').addEventListener('click', closeResult);
+$('#rvView').addEventListener('click', () => { S.view = S.view === 'student' ? 'teacher' : 'student'; save(); renderAll(); buildResult(); });
+$('#tFull').addEventListener('click', openResult);
+['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => {
+  if (!FS.is() && rvOpen) closeResult();
+  else if (rvOpen) setTimeout(sizeResult, 60);
+}));
+window.addEventListener('resize', () => { if (rvOpen) sizeResult(); });
 $('#btnSkip').addEventListener('click', () => {
   if (show.finale) closeShow();
   else { show.skipped = true; flushWaits(); }
@@ -1227,13 +1441,14 @@ $('#btnShuffle').addEventListener('click', () => {
   const map = makeShuffle(an);
   S.result = map; save();
   if (S.effects) runShow(map);
-  else { mode = 'view'; renderAll(true); SFX.done(); toast('✅ 席替え完了！'); }
+  else { mode = 'view'; renderAll(true); SFX.done(); openResult(); }
 });
 
 /* キーボード */
 window.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (!$('#lockModal').hidden) { closeLock(); return; }
+  if (rvOpen) { closeResult(); return; }
   if (show.active) { if (show.finale) closeShow(); else { show.skipped = true; flushWaits(); } }
 });
 
