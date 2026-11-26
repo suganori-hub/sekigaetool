@@ -1,0 +1,3292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>席替えアプリ｜ド派手ステージ演出＆空席ゼロ座席表メーカー</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&family=Noto+Sans+JP:wght@400;500;700;800;900&display=swap"
+    rel="stylesheet"
+  />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', '"Noto Sans JP"', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* ============================================================
+       ベース質感・黒板・通常アニメーション
+       ============================================================ */
+    .chalkboard-surface {
+      background: linear-gradient(145deg, #1f543d 0%, #143a29 100%);
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .toast-enter {
+      animation: toastIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    @keyframes quickPop {
+      0% { transform: scale(0.84); }
+      55% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    .animate-quick-pop {
+      animation: quickPop 0.36s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* ============================================================
+       ド派手ステージモード（ダーク＆ネオン＆スポットライト＆レーザー）
+       ============================================================ */
+    body {
+      transition: background-color 0.5s ease, color 0.5s ease;
+    }
+
+    body.stage-mode {
+      background-color: #050816 !important;
+      color: #f8fafc !important;
+      overflow-x: hidden;
+    }
+
+    /* ステージ背景レイヤー */
+    #stage-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.45s ease;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(56, 189, 248, 0.18), transparent 55%),
+        radial-gradient(circle at 15% 85%, rgba(236, 72, 153, 0.2), transparent 50%),
+        radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.22), transparent 50%),
+        linear-gradient(180deg, #060a1c 0%, #0d102b 55%, #050816 100%);
+    }
+
+    body.stage-mode #stage-bg {
+      opacity: 1;
+    }
+
+    /* 回転スポットライト */
+    @keyframes spinBeamLeft {
+      0%, 100% { transform: rotate(-28deg); }
+      50% { transform: rotate(24deg); }
+    }
+    @keyframes spinBeamRight {
+      0%, 100% { transform: rotate(28deg); }
+      50% { transform: rotate(-24deg); }
+    }
+    @keyframes laserSweep {
+      0% { transform: translateX(-30%) rotate(-18deg); opacity: 0.15; }
+      50% { transform: translateX(30%) rotate(18deg); opacity: 0.55; }
+      100% { transform: translateX(-30%) rotate(-18deg); opacity: 0.15; }
+    }
+
+    .spotlight-beam {
+      position: absolute;
+      top: -15%;
+      width: 48vw;
+      height: 150vh;
+      transform-origin: top center;
+      filter: blur(22px);
+      mix-blend-mode: screen;
+    }
+
+    .spotlight-left {
+      left: 5%;
+      background: conic-gradient(from 165deg at 50% 0%, transparent 0deg, rgba(56, 189, 248, 0.34) 15deg, transparent 32deg);
+      animation: spinBeamLeft 3.6s ease-in-out infinite;
+    }
+
+    .spotlight-right {
+      right: 5%;
+      background: conic-gradient(from 165deg at 50% 0%, transparent 0deg, rgba(244, 63, 94, 0.32) 15deg, transparent 32deg);
+      animation: spinBeamRight 3.2s ease-in-out infinite;
+    }
+
+    .spotlight-center {
+      left: 26%;
+      background: conic-gradient(from 162deg at 50% 0%, transparent 0deg, rgba(250, 204, 21, 0.24) 18deg, transparent 36deg);
+      animation: spinBeamLeft 4.4s ease-in-out infinite reverse;
+    }
+
+    .laser-line {
+      position: absolute;
+      inset: -20%;
+      background: repeating-linear-gradient(
+        105deg,
+        transparent 0px,
+        transparent 140px,
+        rgba(34, 211, 238, 0.18) 142px,
+        transparent 145px,
+        transparent 280px,
+        rgba(232, 121, 249, 0.16) 282px,
+        transparent 285px
+      );
+      animation: laserSweep 5s ease-in-out infinite;
+    }
+
+    /* ステージモード中は座席ボードを最前面の主役にする */
+    body.stage-mode header,
+    body.stage-mode aside,
+    body.stage-mode footer,
+    body.stage-mode #action-toolbar {
+      opacity: 0.08;
+      pointer-events: none;
+      filter: blur(3px);
+      transition: opacity 0.35s ease, filter 0.35s ease;
+    }
+
+    body.stage-mode #printable-area {
+      position: relative;
+      z-index: 30;
+      background: rgba(12, 18, 42, 0.86) !important;
+      border: 2px solid rgba(56, 189, 248, 0.55) !important;
+      box-shadow:
+        0 0 36px rgba(56, 189, 248, 0.3),
+        0 0 80px rgba(168, 85, 247, 0.22),
+        inset 0 0 28px rgba(56, 189, 248, 0.12) !important;
+      transition: all 0.4s ease;
+    }
+
+    body.stage-mode .stage-hide {
+      opacity: 0.25;
+    }
+
+    body.stage-mode .chalkboard-surface {
+      border-color: #38bdf8 !important;
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.45), inset 0 2px 12px rgba(0, 0, 0, 0.55);
+    }
+
+    /* 画面インパクトシェイク */
+    @keyframes boardShake {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      20% { transform: translate(-4px, 3px) rotate(-0.35deg); }
+      45% { transform: translate(4px, -3px) rotate(0.35deg); }
+      70% { transform: translate(-2px, 2px) rotate(-0.15deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
+    }
+    .animate-board-shake {
+      animation: boardShake 0.22s ease-out;
+    }
+
+    @keyframes heavyShake {
+      0% { transform: translate(0, 0) scale(1); }
+      20% { transform: translate(-7px, 5px) scale(1.012); }
+      40% { transform: translate(7px, -5px) scale(1.012); }
+      60% { transform: translate(-5px, 3px) scale(1.005); }
+      80% { transform: translate(4px, -3px) scale(1); }
+      100% { transform: translate(0, 0) scale(1); }
+    }
+    .animate-heavy-shake {
+      animation: heavyShake 0.35s ease-out;
+    }
+
+    /* ルーレット中の3Dフリップ＆ネオン発光 */
+    @keyframes neonRoulette {
+      0% {
+        transform: perspective(500px) rotateX(0deg) scale(0.97);
+        border-color: #22d3ee;
+        box-shadow: 0 0 18px rgba(34, 211, 238, 0.75), inset 0 0 12px rgba(34, 211, 238, 0.3);
+      }
+      50% {
+        transform: perspective(500px) rotateX(22deg) scale(1.03);
+        border-color: #e879f9;
+        box-shadow: 0 0 24px rgba(232, 121, 249, 0.85), inset 0 0 14px rgba(232, 121, 249, 0.35);
+      }
+      100% {
+        transform: perspective(500px) rotateX(0deg) scale(0.97);
+        border-color: #38bdf8;
+        box-shadow: 0 0 18px rgba(56, 189, 248, 0.75), inset 0 0 12px rgba(56, 189, 248, 0.3);
+      }
+    }
+
+    .seat-rouletting {
+      background: linear-gradient(145deg, #172554 0%, #3b0764 100%) !important;
+      color: #f0f9ff !important;
+      animation: neonRoulette 0.22s linear infinite;
+      will-change: transform, box-shadow;
+    }
+
+    .seat-rouletting .seat-num {
+      color: #ffffff !important;
+      text-shadow: 0 0 14px rgba(34, 211, 238, 0.95);
+    }
+
+    /* 固定席のステージモード時ゴールドオーラ */
+    body.stage-mode .seat-fixed-card {
+      background: linear-gradient(145deg, #451a03 0%, #78350f 100%) !important;
+      border-color: #fbbf24 !important;
+      color: #fef3c7 !important;
+      box-shadow: 0 0 20px rgba(251, 191, 36, 0.55) !important;
+    }
+
+    body.stage-mode .seat-disabled-card {
+      opacity: 0.14 !important;
+      border-color: rgba(148, 163, 184, 0.3) !important;
+      background: rgba(15, 23, 42, 0.4) !important;
+    }
+
+    /* 確定瞬間のフラッシュ＆バウンド＆ネオン衝撃波 */
+    @keyframes seatLockBurst {
+      0% {
+        transform: scale(0.75);
+        background: #ffffff;
+        border-color: #fef08a;
+        box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.95), 0 0 42px rgba(255, 255, 255, 1);
+      }
+      45% {
+        transform: scale(1.22);
+        background: linear-gradient(145deg, #fef08a 0%, #f59e0b 100%);
+        border-color: #ffffff;
+        box-shadow: 0 0 0 18px rgba(250, 204, 21, 0), 0 0 36px rgba(250, 204, 21, 0.95);
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 18px rgba(52, 211, 153, 0.65);
+      }
+    }
+
+    .seat-just-locked {
+      z-index: 15;
+      animation: seatLockBurst 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    body.stage-mode .seat-locked-stage {
+      background: linear-gradient(145deg, #064e3b 0%, #0f766e 100%) !important;
+      border-color: #34d399 !important;
+      color: #ecfdf5 !important;
+      box-shadow: 0 0 18px rgba(52, 211, 153, 0.5), inset 0 0 10px rgba(167, 243, 208, 0.2) !important;
+    }
+    body.stage-mode .seat-locked-stage .seat-num {
+      color: #ffffff !important;
+      text-shadow: 0 0 12px rgba(167, 243, 208, 0.85);
+    }
+
+    /* 巨大カウントダウン演出 */
+    @keyframes countdownBlast {
+      0% {
+        opacity: 0;
+        transform: scale(2.4);
+        filter: blur(8px);
+      }
+      22% {
+        opacity: 1;
+        transform: scale(0.95);
+        filter: blur(0);
+      }
+      36% {
+        transform: scale(1.04);
+      }
+      85% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(0.65);
+      }
+    }
+
+    @keyframes shockRing {
+      0% {
+        transform: scale(0.3);
+        opacity: 0.95;
+      }
+      100% {
+        transform: scale(2.6);
+        opacity: 0;
+      }
+    }
+
+    .animate-countdown-blast {
+      animation: countdownBlast 0.68s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    .animate-shock-ring {
+      animation: shockRing 0.68s ease-out forwards;
+    }
+
+    .neon-gold-text {
+      background: linear-gradient(180deg, #fffbeb 0%, #fde047 45%, #f59e0b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 22px rgba(250, 204, 21, 0.85)) drop-shadow(0 6px 14px rgba(0, 0, 0, 0.65));
+    }
+
+    .neon-cyan-text {
+      background: linear-gradient(180deg, #f0f9ff 0%, #38bdf8 50%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 26px rgba(56, 189, 248, 0.9)) drop-shadow(0 6px 16px rgba(0, 0, 0, 0.7));
+    }
+
+    /* フィナーレバナー */
+    @keyframes finaleBannerPop {
+      0% {
+        opacity: 0;
+        transform: scale(0.45) translateY(30px);
+      }
+      55% {
+        opacity: 1;
+        transform: scale(1.08) translateY(-4px);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .animate-finale-banner {
+      animation: finaleBannerPop 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* ============================================================
+       印刷専用スタイル（A4に綺麗に収まり、使わない席の枠線は非表示）
+       ============================================================ */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 10mm;
+      }
+
+      html,
+      body {
+        background: #ffffff !important;
+        color: #111827 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      .no-print,
+      #stage-bg,
+      #fx-canvas,
+      #countdown-overlay,
+      #finale-overlay,
+      #skip-stage-bar {
+        display: none !important;
+      }
+
+      .print-only {
+        display: block !important;
+      }
+
+      main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+      }
+
+      #printable-area {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        background: #ffffff !important;
+      }
+
+      #seat-grid {
+        gap: 8px !important;
+      }
+
+      .seat-card {
+        break-inside: avoid;
+        box-shadow: none !important;
+        min-height: 76px !important;
+        border-width: 2px !important;
+      }
+
+      /* 使わない席はレイアウト位置を保ったまま枠線・文字を完全に隠す */
+      .seat-disabled-card {
+        visibility: hidden !important;
+        border: none !important;
+        background: transparent !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col antialiased selection:bg-indigo-200 selection:text-indigo-900">
+
+  <!-- ==================== ステージ背景オーバーレイ（ド派手演出用） ==================== -->
+  <div id="stage-bg" aria-hidden="true">
+    <div class="spotlight-beam spotlight-left"></div>
+    <div class="spotlight-beam spotlight-right"></div>
+    <div class="spotlight-beam spotlight-center"></div>
+    <div class="laser-line"></div>
+  </div>
+
+  <!-- ==================== フルスクリーン紙吹雪＆打ち上げ花火 Canvas ==================== -->
+  <canvas
+    id="fx-canvas"
+    class="fixed inset-0 z-50 pointer-events-none hidden"
+    aria-hidden="true"
+  ></canvas>
+
+  <!-- ==================== カウントダウン演出オーバーレイ ==================== -->
+  <div
+    id="countdown-overlay"
+    class="fixed inset-0 z-40 hidden items-center justify-center pointer-events-none bg-slate-950/50 backdrop-blur-[2px]"
+  >
+    <div class="relative flex items-center justify-center">
+      <div
+        id="countdown-ring"
+        class="absolute w-48 h-48 sm:w-64 sm:h-64 rounded-full border-4 border-amber-300/90 opacity-0"
+      ></div>
+      <div
+        id="countdown-text"
+        class="font-black tracking-tight select-none text-center px-4"
+      ></div>
+    </div>
+  </div>
+
+  <!-- ==================== フィナーレ祝福バナー ==================== -->
+  <div
+    id="finale-overlay"
+    class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-slate-950/35"
+  >
+    <div
+      id="finale-banner-card"
+      class="relative max-w-xl w-full rounded-3xl border-2 border-amber-300/90 bg-gradient-to-br from-slate-900/95 via-indigo-950/95 to-purple-950/95 p-6 sm:p-8 text-center shadow-[0_0_60px_rgba(250,204,21,0.55)]"
+    >
+      <div class="text-xs sm:text-sm font-extrabold tracking-[0.25em] text-cyan-300 uppercase mb-2">
+        NEW SEATING COMPLETED
+      </div>
+      <h2 class="text-3xl sm:text-5xl font-black neon-gold-text tracking-tight leading-tight">
+        🎉 席替え完了！ 🎉
+      </h2>
+      <p id="finale-summary-text" class="mt-3 text-sm sm:text-base font-bold text-amber-100/90"></p>
+      <div class="mt-5 flex justify-center">
+        <button
+          type="button"
+          id="btn-close-finale"
+          class="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-black text-sm sm:text-base shadow-lg active:scale-95 transition"
+        >
+          座席表を見る
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 演出スキップ用フローティングバー ==================== -->
+  <div
+    id="skip-stage-bar"
+    class="fixed top-4 right-4 z-50 hidden items-center gap-2"
+  >
+    <div
+      id="stage-phase-pill"
+      class="px-3.5 py-2 rounded-full bg-slate-900/85 border border-cyan-400/60 text-cyan-200 text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm"
+    >
+      SHUFFLE STAGE
+    </div>
+    <button
+      type="button"
+      id="btn-skip-effect"
+      class="px-4 py-2 rounded-full bg-white/95 hover:bg-amber-300 text-slate-900 font-extrabold text-xs sm:text-sm shadow-xl border-2 border-amber-400 active:scale-95 transition flex items-center gap-1.5"
+    >
+      <span>⏭️</span>
+      <span>演出をスキップ</span>
+    </button>
+  </div>
+
+  <!-- ==================== ヘッダー ==================== -->
+  <header class="no-print bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <!-- タイトル -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white flex items-center justify-center shadow-md shrink-0">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="7" height="6" rx="1.5"></rect>
+            <rect x="14" y="4" width="7" height="6" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="6" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="6" rx="1.5"></rect>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-black tracking-tight text-slate-900 leading-tight flex items-center gap-1.5">
+            <span>席替えアプリ</span>
+            <span class="hidden sm:inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-100 to-pink-100 text-pink-700 border border-pink-200">
+              ド派手演出対応
+            </span>
+          </h1>
+          <p class="text-xs text-slate-500 hidden sm:block">
+            最大6列×7行・空席ゼロ調整・1〜48番固定対応
+          </p>
+        </div>
+      </div>
+
+      <!-- 右側アクション -->
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 効果音クイックON/OFF -->
+        <button
+          type="button"
+          id="btn-sound-toggle"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition active:scale-95"
+          title="シンセサイザー効果音のON/OFFを切り替え"
+        >
+          <span id="sound-icon">🔊</span>
+          <span id="sound-label">効果音 ON</span>
+        </button>
+
+        <!-- 印刷ボタン -->
+        <button
+          type="button"
+          id="btn-print"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-white text-xs sm:text-sm font-bold transition shadow-xs"
+        >
+          <span>🖨️</span>
+          <span class="hidden sm:inline">座席表を印刷</span>
+          <span class="sm:hidden">印刷</span>
+        </button>
+
+        <!-- 初期化ボタン -->
+        <button
+          type="button"
+          id="btn-reset-all"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 active:scale-95 text-slate-600 border border-slate-200 text-xs sm:text-sm font-bold transition"
+          title="すべての設定を初期状態に戻す"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          <span class="hidden sm:inline">リセット</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== メインコンテンツ ==================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+
+      <!-- ==================== 左カラム：設定パネル（印刷時非表示） ==================== -->
+      <aside class="no-print lg:col-span-4 space-y-4 order-2 lg:order-1">
+
+        <!-- カード1：座席グリッドサイズ（横1〜6 × 縦1〜7） -->
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-3.5">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm">1</span>
+              <h2 class="text-base font-extrabold text-slate-900">座席グリッド設定</h2>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              最大 6列×7行
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <!-- 横（列数: 1〜6） -->
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+              <div class="text-xs font-bold text-slate-500 mb-2 text-center">横（列数：1〜6）</div>
+              <div class="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  id="btn-cols-dec"
+                  class="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 active:scale-95 flex items-center justify-center text-lg font-black text-slate-700 transition"
+                  aria-label="列数を減らす"
+                >−</button>
+                <span id="display-cols" class="text-2xl font-black text-slate-900 tabular-nums">6</span>
+                <button
+                  type="button"
+                  id="btn-cols-inc"
+                  class="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 active:scale-95 flex items-center justify-center text-lg font-black text-slate-700 transition"
+                  aria-label="列数を増やす"
+                >＋</button>
+              </div>
+            </div>
+
+            <!-- 縦（行数: 1〜7） -->
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+              <div class="text-xs font-bold text-slate-500 mb-2 text-center">縦（行数：1〜7）</div>
+              <div class="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  id="btn-rows-dec"
+                  class="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 active:scale-95 flex items-center justify-center text-lg font-black text-slate-700 transition"
+                  aria-label="行数を減らす"
+                >−</button>
+                <span id="display-rows" class="text-2xl font-black text-slate-900 tabular-nums">7</span>
+                <button
+                  type="button"
+                  id="btn-rows-inc"
+                  class="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 active:scale-95 flex items-center justify-center text-lg font-black text-slate-700 transition"
+                  aria-label="行数を増やす"
+                >＋</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3 flex items-center justify-between text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+            <span>総マス：<strong id="summary-total-cells" class="text-slate-900">42</strong></span>
+            <span>使わない席：<strong id="summary-disabled-cells" class="text-slate-900">7</strong></span>
+            <span>使う席：<strong id="summary-valid-cells" class="text-emerald-700">35</strong></span>
+          </div>
+
+          <!-- 空席を許可しないチェックボックス -->
+          <label class="mt-3 flex items-start gap-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              id="chk-disallow-empty"
+              class="mt-0.5 w-4 h-4 rounded accent-indigo-600 cursor-pointer"
+              checked
+            />
+            <span class="text-xs font-bold text-indigo-950 leading-snug">
+              空席を許可しない（使う席数＝生徒人数のみ実行可）
+            </span>
+          </label>
+        </section>
+
+        <!-- カード2：人数・出席番号設定（1〜48番） -->
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-3.5">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm">2</span>
+              <h2 class="text-base font-extrabold text-slate-900">人数・出席番号設定</h2>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              1〜48番対応
+            </span>
+          </div>
+
+          <!-- 人数一括設定 -->
+          <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <div class="flex items-center justify-between mb-2">
+              <label for="input-quick-count" class="text-xs font-bold text-slate-600">
+                人数で一括設定（1〜N番）
+              </label>
+              <span id="custom-numbers-badge" class="hidden text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                個別調整中
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="btn-count-dec"
+                class="w-10 h-10 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 active:scale-95 flex items-center justify-center text-lg font-black text-slate-700 shrink-0 transition"
+                aria-label="人数を1人減らす"
+              >−</button>
+              <div class="relative flex-1">
+                <input
+                  type="number"
+                  id="input-quick-count"
+                  min="0"
+                  max="48"
+                  value="35"
+                  class="w-full h-10 rounded-xl border border-slate-300 bg-white text-center text-xl font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+                />
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">人</span>
+              </div>
+              <button
+                type="button"
+                id="btn-count-inc"
+                class="w-10 h-10 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 active:scale-95 flex items-center justify-center text-lg font-black text-slate-700 shrink-0 transition"
+                aria-label="人数を1人増やす"
+              >＋</button>
+            </div>
+          </div>
+
+          <!-- 個別ON/OFFトグル -->
+          <div class="mt-3">
+            <button
+              type="button"
+              id="btn-toggle-number-panel"
+              class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs sm:text-sm font-bold text-slate-700 transition"
+              aria-expanded="false"
+            >
+              <span>出席番号の個別ON/OFF（欠番・43〜48番）</span>
+              <svg id="icon-number-panel-chevron" class="w-4 h-4 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+
+            <div id="number-selection-panel" class="hidden mt-3 pt-3 border-t border-slate-100">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <span class="text-xs font-semibold text-slate-500">
+                  タップでON/OFF（対象 <strong id="panel-active-count" class="text-indigo-700">35</strong>人）
+                </span>
+                <div class="flex items-center gap-1.5">
+                  <button type="button" id="btn-select-all-numbers" class="px-2 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">全選択(48)</button>
+                  <button type="button" id="btn-clear-all-numbers" class="px-2 py-1 text-xs font-bold rounded-lg bg-slate-100 hover:bg-rose-100 hover:text-rose-700 text-slate-700 transition">全解除</button>
+                </div>
+              </div>
+              <div id="number-grid" class="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-6 gap-1.5">
+                <!-- JSで動的生成 -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- カード3：演出・サウンド設定 -->
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 sm:p-5">
+          <div class="flex items-center gap-2 mb-3.5">
+            <span class="w-7 h-7 rounded-lg bg-pink-100 text-pink-700 flex items-center justify-center font-black text-sm">3</span>
+            <h2 class="text-base font-extrabold text-slate-900">シャッフル演出設定</h2>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200" role="group" aria-label="演出モード">
+            <button type="button" data-effect-mode="flashy" class="effect-mode-btn py-2 px-1.5 rounded-lg text-xs font-extrabold transition">
+              🎆 ド派手
+            </button>
+            <button type="button" data-effect-mode="speed" class="effect-mode-btn py-2 px-1.5 rounded-lg text-xs font-extrabold transition">
+              ⚡ スピード
+            </button>
+            <button type="button" data-effect-mode="none" class="effect-mode-btn py-2 px-1.5 rounded-lg text-xs font-extrabold transition">
+              ⏩ なし
+            </button>
+          </div>
+
+          <p id="effect-mode-desc" class="mt-2.5 text-xs text-slate-500 leading-relaxed">
+            ステージ照明・カウントダウン・高速ルーレット・1席ずつ確定・花火＆紙吹雪のフル演出！
+          </p>
+        </section>
+
+        <!-- カード4：固定中の座席一覧 -->
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-black text-sm">4</span>
+              <h2 class="text-base font-extrabold text-slate-900">固定中の座席</h2>
+            </div>
+            <button
+              type="button"
+              id="btn-clear-all-fixed"
+              class="hidden text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline transition"
+            >すべて解除</button>
+          </div>
+          <div id="fixed-list-container" class="space-y-1.5">
+            <!-- JSで動的生成 -->
+          </div>
+        </section>
+      </aside>
+
+      <!-- ==================== 右カラム：座席数チェッカー・編集タブ・教室ボード ==================== -->
+      <section class="lg:col-span-8 space-y-4 order-1 lg:order-2">
+
+        <!-- リアルタイム座席数チェッカー＆アクションバー -->
+        <div id="action-toolbar" class="no-print space-y-3">
+
+          <!-- 目立つリアルタイム座席数チェッカー -->
+          <div
+            id="seat-checker-banner"
+            class="rounded-2xl border-2 px-4 py-3.5 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          >
+            <div class="flex flex-wrap items-center gap-2.5">
+              <div class="flex items-center gap-2 text-sm sm:text-base font-extrabold">
+                <span>使う席：<strong id="checker-valid-seats" class="text-lg sm:text-xl tabular-nums">35</strong>席</span>
+                <span class="opacity-40">／</span>
+                <span>対象生徒：<strong id="checker-student-count" class="text-lg sm:text-xl tabular-nums">35</strong>人</span>
+              </div>
+              <span
+                id="checker-status-badge"
+                class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-sm font-black shadow-2xs"
+              >
+                ✅ ピッタリ！（空席なし）
+              </span>
+            </div>
+
+            <!-- ワンクリック自動調整ボタン（不一致時のみ表示） -->
+            <button
+              type="button"
+              id="btn-auto-adjust"
+              class="hidden inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white text-xs sm:text-sm font-black shadow-md transition shrink-0"
+            >
+              <span>⚡</span>
+              <span>人数に合わせて使う席を自動調整</span>
+            </button>
+          </div>
+
+          <!-- メインシャッフル＆視点切り替えバー -->
+          <div class="bg-white rounded-2xl shadow-xs border border-slate-200 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <!-- ド派手シャッフル実行ボタン -->
+            <button
+              type="button"
+              id="btn-shuffle"
+              class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:via-purple-500 hover:to-pink-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-base sm:text-lg shadow-lg shadow-purple-600/25 transition"
+            >
+              <span class="text-xl leading-none">🎰</span>
+              <span id="btn-shuffle-label">席替えスタート！</span>
+            </button>
+
+            <!-- 視点切り替え & 配置クリア -->
+            <div class="flex flex-wrap items-center justify-between sm:justify-end gap-2">
+              <div class="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200" role="group" aria-label="表示視点の切り替え">
+                <button type="button" id="btn-view-student" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-extrabold transition">
+                  生徒視点
+                </button>
+                <button type="button" id="btn-view-teacher" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-extrabold transition">
+                  先生視点
+                </button>
+              </div>
+
+              <button
+                type="button"
+                id="btn-clear-unfixed"
+                class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs sm:text-sm font-bold text-slate-600 transition"
+                title="固定席以外の出席番号をクリア"
+              >
+                配置クリア
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 印刷対象：教室エリア ==================== -->
+        <div id="printable-area" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-4 sm:p-6">
+
+          <!-- 印刷専用ヘッダー -->
+          <div class="print-only hidden mb-4 pb-2.5 border-b-2 border-slate-300">
+            <div class="flex items-end justify-between">
+              <div>
+                <h2 class="text-2xl font-black text-slate-900">クラス座席表</h2>
+                <p id="print-view-subtitle" class="text-sm text-slate-600 mt-0.5"></p>
+              </div>
+              <div class="text-right text-sm text-slate-600">
+                <p id="print-date"></p>
+                <p id="print-stats" class="font-bold"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 座席表の上部：直感的な編集モード切り替えタブ（印刷時非表示） -->
+          <div class="no-print stage-hide mb-4 pb-4 border-b border-slate-100 space-y-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <!-- 2大編集モードタブ -->
+              <div class="inline-grid grid-cols-2 p-1 rounded-2xl bg-slate-100 border border-slate-200 w-full sm:w-auto" role="tablist" aria-label="座席の編集モード">
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-mode-toggle"
+                  class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5"
+                >
+                  <span>🪑</span>
+                  <span>使う席を選ぶ</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-mode-fix"
+                  class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5"
+                >
+                  <span>🔒</span>
+                  <span>席を固定する</span>
+                </button>
+              </div>
+
+              <!-- 現在の視点バッジ -->
+              <span id="view-mode-badge" class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold">
+                黒板が上（生徒視点）
+              </span>
+            </div>
+
+            <!-- 編集モードの操作ガイド -->
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <p id="edit-mode-hint" class="font-semibold text-slate-600"></p>
+              <div class="flex items-center gap-3 text-slate-500 font-medium">
+                <span class="inline-flex items-center gap-1">
+                  <span class="w-3 h-3 rounded bg-white border-2 border-slate-300 inline-block"></span>使う席
+                </span>
+                <span class="inline-flex items-center gap-1">
+                  <span class="w-3 h-3 rounded bg-amber-100 border-2 border-amber-400 inline-block"></span>固定席
+                </span>
+                <span class="inline-flex items-center gap-1">
+                  <span class="w-3 h-3 rounded bg-slate-100 border border-dashed border-slate-300 inline-block"></span>使わない席
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 教室コンテナ（視点により上下反転） -->
+          <div id="classroom-layout" class="flex flex-col gap-5 sm:gap-6">
+            <!-- 黒板＆教卓 -->
+            <div id="blackboard-block" class="flex flex-col items-center">
+              <div class="w-full max-w-md rounded-xl border-4 border-amber-800/80 chalkboard-surface px-4 py-2.5 text-center relative transition-all">
+                <span class="text-white/95 font-black tracking-[0.28em] text-sm sm:text-base">黒　板</span>
+                <div class="absolute bottom-1 right-4 w-8 h-1 rounded-full bg-white/75"></div>
+                <div class="absolute bottom-1 right-14 w-5 h-1 rounded-full bg-amber-200/80"></div>
+              </div>
+              <div id="teacher-desk-wrapper" class="mt-2">
+                <div class="px-6 py-1 rounded-lg bg-amber-100 border-2 border-amber-300 text-amber-900 text-xs font-black shadow-2xs">
+                  教 卓
+                </div>
+              </div>
+            </div>
+
+            <!-- 座席グリッド（最大 6列 × 7行） -->
+            <div id="seat-grid" class="grid gap-2 sm:gap-2.5 md:gap-3 w-full select-none">
+              <!-- JSで動的生成 -->
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ==================== フッター（印刷時非表示） ==================== -->
+  <footer class="no-print mt-auto py-4 px-4 text-center text-xs text-slate-400">
+    すべての設定と座席配置はブラウザに自動保存されます。GitHub Pages等で単一HTMLファイルのまま公開・利用できます。
+  </footer>
+
+  <!-- ==================== モーダル：出席番号の固定設定 ==================== -->
+  <div
+    id="fix-modal"
+    class="no-print fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/55 backdrop-blur-[2px]"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="fix-modal-title"
+  >
+    <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+      <div class="px-5 py-4 bg-amber-50/70 border-b border-amber-200/80 flex items-center justify-between">
+        <div>
+          <h3 id="fix-modal-title" class="text-base font-black text-slate-900 flex items-center gap-1.5">
+            <span>🔒</span>
+            <span>この席に固定する出席番号</span>
+          </h3>
+          <p id="fix-modal-subtitle" class="text-xs font-semibold text-amber-800/80 mt-0.5"></p>
+        </div>
+        <button
+          type="button"
+          id="btn-close-fix-modal"
+          class="w-9 h-9 rounded-xl hover:bg-amber-200/60 text-slate-600 flex items-center justify-center transition"
+          aria-label="閉じる"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4 max-h-[74vh] overflow-y-auto">
+        <div class="flex items-center justify-between gap-2">
+          <label for="modal-student-select" class="text-xs font-bold text-slate-600">
+            出席番号を選択（1〜48）
+          </label>
+          <button
+            type="button"
+            id="btn-modal-unfix"
+            class="hidden text-xs font-extrabold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition"
+          >
+            固定を解除
+          </button>
+        </div>
+
+        <select
+          id="modal-student-select"
+          class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+        ></select>
+
+        <!-- クイック選択グリッド（1〜48） -->
+        <div>
+          <p class="text-xs text-slate-500 mb-2">番号をタップして素早く選択（薄い番号は欠番）</p>
+          <div id="modal-number-picker" class="grid grid-cols-8 gap-1.5"></div>
+        </div>
+
+        <!-- バリデーションメッセージ -->
+        <div
+          id="modal-validation-msg"
+          class="hidden rounded-xl px-3.5 py-2.5 text-xs font-bold border"
+          role="alert"
+        ></div>
+      </div>
+
+      <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          id="btn-cancel-fix-modal"
+          class="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-sm font-bold text-slate-700 transition"
+        >
+          キャンセル
+        </button>
+        <button
+          type="button"
+          id="btn-save-fix-modal"
+          class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-extrabold shadow-xs transition"
+        >
+          固定を保存
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== カスタム確認モーダル（confirm不使用） ==================== -->
+  <div
+    id="confirm-modal"
+    class="no-print fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/55 backdrop-blur-[2px]"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="confirm-modal-title"
+  >
+    <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-sm p-5 space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+          </svg>
+        </div>
+        <div>
+          <h3 id="confirm-modal-title" class="text-base font-black text-slate-900">確認</h3>
+          <p id="confirm-modal-message" class="text-sm text-slate-600 mt-1 leading-relaxed"></p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button
+          type="button"
+          id="btn-confirm-cancel"
+          class="px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-sm font-bold text-slate-700 transition"
+        >キャンセル</button>
+        <button
+          type="button"
+          id="btn-confirm-ok"
+          class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-extrabold shadow-xs transition"
+        >実行する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== トースト通知コンテナ ==================== -->
+  <div
+    id="toast-container"
+    class="no-print fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-xs sm:max-w-sm pointer-events-none"
+    aria-live="polite"
+  ></div>
+
+  <!-- ==================== アプリケーション JavaScript ==================== -->
+  <script>
+    (() => {
+      'use strict';
+
+      // ============================================================
+      // 1. Web Audio API 完全自前シンセサイザー効果音エンジン
+      // ============================================================
+      class SynthSoundEngine {
+        constructor() {
+          this.ctx = null;
+          this.enabled = true;
+          this.noiseBuffer = null;
+        }
+
+        setEnabled(flag) {
+          this.enabled = Boolean(flag);
+        }
+
+        ensureContext() {
+          if (!this.enabled) return null;
+          try {
+            if (!this.ctx) {
+              const AudioCtx = window.AudioContext || window.webkitAudioContext;
+              if (!AudioCtx) return null;
+              this.ctx = new AudioCtx();
+            }
+            if (this.ctx.state === 'suspended') {
+              this.ctx.resume().catch(() => {});
+            }
+            if (!this.noiseBuffer && this.ctx) {
+              const sampleRate = this.ctx.sampleRate;
+              const length = Math.floor(sampleRate * 0.5);
+              const buffer = this.ctx.createBuffer(1, length, sampleRate);
+              const data = buffer.getChannelData(0);
+              for (let i = 0; i < length; i++) {
+                data[i] = Math.random() * 2 - 1;
+              }
+              this.noiseBuffer = buffer;
+            }
+            return this.ctx;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        /** 軽いUIクリック音 */
+        playClick(pitch = 660) {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(pitch, now);
+          osc.frequency.exponentialRampToValueAtTime(pitch * 1.25, now + 0.045);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.06);
+        }
+
+        /** カウントダウン「3」「2」「1」の重厚な電子ビープ＋サブベース */
+        playCountdown(step) {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+          const baseFreq = step === 3 ? 440 : step === 2 ? 523.25 : 659.25;
+
+          // メインシンセビープ
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(baseFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.96, now + 0.25);
+          gain.gain.setValueAtTime(0.24, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.3);
+
+          // ズドン！というサブベース衝撃音
+          const sub = ctx.createOscillator();
+          const subGain = ctx.createGain();
+          sub.type = 'sine';
+          sub.frequency.setValueAtTime(140, now);
+          sub.frequency.exponentialRampToValueAtTime(42, now + 0.22);
+          subGain.gain.setValueAtTime(0.32, now);
+          subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          sub.connect(subGain);
+          subGain.connect(ctx.destination);
+          sub.start(now);
+          sub.stop(now + 0.26);
+        }
+
+        /** 「SHUFFLE!!」の上昇スイープ＆インパクト和音 */
+        playShuffleGo() {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+
+          // 上昇シンセスイープ
+          const sweep = ctx.createOscillator();
+          const sGain = ctx.createGain();
+          sweep.type = 'sawtooth';
+          sweep.frequency.setValueAtTime(220, now);
+          sweep.frequency.exponentialRampToValueAtTime(1320, now + 0.36);
+
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(2400, now);
+
+          sGain.gain.setValueAtTime(0.18, now);
+          sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          sweep.connect(filter);
+          filter.connect(sGain);
+          sGain.connect(ctx.destination);
+          sweep.start(now);
+          sweep.stop(now + 0.46);
+
+          // パワーコード（C5, G5, C6）
+          [523.25, 783.99, 1046.5].forEach((freq) => {
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(freq, now);
+            g.gain.setValueAtTime(0.09, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+            osc.connect(g);
+            g.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.44);
+          });
+        }
+
+        /** 高速ルーレットのピコピコ電子音＋スネアドラムロール */
+        playRouletteTick(progress) {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+
+          // ピコピコ音（進行に合わせてピッチ上昇）
+          const freq = 340 + progress * 580 + (Math.random() * 80 - 40);
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, now);
+          gain.gain.setValueAtTime(0.075, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.05);
+
+          // ドラムロール風スネアノイズ
+          if (this.noiseBuffer) {
+            const src = ctx.createBufferSource();
+            src.buffer = this.noiseBuffer;
+            const band = ctx.createBiquadFilter();
+            band.type = 'bandpass';
+            band.frequency.setValueAtTime(1500 + progress * 900, now);
+            band.Q.value = 1.6;
+            const nGain = ctx.createGain();
+            nGain.gain.setValueAtTime(0.05 + progress * 0.05, now);
+            nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+            src.connect(band);
+            band.connect(nGain);
+            nGain.connect(ctx.destination);
+            src.start(now);
+            src.stop(now + 0.05);
+          }
+        }
+
+        /** 座席が1つ確定する瞬間の「バシッ！」音＋音階上昇ベル */
+        playSeatLock(index, total) {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+
+          // 進行するほど音階が上がるメジャースケール
+          const scale = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51];
+          const progress = total > 1 ? index / (total - 1) : 1;
+          const noteIdx = Math.min(scale.length - 1, Math.floor(progress * scale.length));
+          const freq = scale[noteIdx];
+
+          // キラッと鳴るベル音
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now);
+          osc.frequency.exponentialRampToValueAtTime(freq * 1.02, now + 0.14);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.19);
+
+          // 「バシッ！」の打撃パンチ音
+          const punch = ctx.createOscillator();
+          const pGain = ctx.createGain();
+          punch.type = 'sine';
+          punch.frequency.setValueAtTime(190, now);
+          punch.frequency.exponentialRampToValueAtTime(55, now + 0.08);
+          pGain.gain.setValueAtTime(0.22, now);
+          pGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          punch.connect(pGain);
+          pGain.connect(ctx.destination);
+          punch.start(now);
+          punch.stop(now + 0.1);
+        }
+
+        /** 花火の打ち上げ炸裂音 */
+        playFireworkPop() {
+          const ctx = this.ensureContext();
+          if (!ctx || !this.noiseBuffer) return;
+          const now = ctx.currentTime;
+
+          const src = ctx.createBufferSource();
+          src.buffer = this.noiseBuffer;
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(1400, now);
+          filter.frequency.exponentialRampToValueAtTime(180, now + 0.28);
+
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.16, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+          src.start(now);
+          src.stop(now + 0.32);
+        }
+
+        /** フィナーレの超豪華ブラス＆ベル・ファンファーレ和音 */
+        playFanfare() {
+          const ctx = this.ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime;
+
+          // タ・タ・タ・ターン！！（C5 -> E5 -> G5 -> C6豪華和音）
+          const hits = [
+            { t: 0.0, dur: 0.14, notes: [523.25, 659.25] },
+            { t: 0.13, dur: 0.14, notes: [659.25, 783.99] },
+            { t: 0.26, dur: 0.14, notes: [783.99, 987.77] },
+            { t: 0.40, dur: 1.15, notes: [523.25, 659.25, 783.99, 1046.5, 1318.51] },
+          ];
+
+          hits.forEach(({ t, dur, notes }) => {
+            notes.forEach((freq) => {
+              const osc = ctx.createOscillator();
+              const filter = ctx.createBiquadFilter();
+              const gain = ctx.createGain();
+
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(freq, now + t);
+              filter.type = 'lowpass';
+              filter.frequency.setValueAtTime(2800, now + t);
+              filter.frequency.exponentialRampToValueAtTime(1100, now + t + dur);
+
+              gain.gain.setValueAtTime(0.001, now + t);
+              gain.gain.linearRampToValueAtTime(0.085, now + t + 0.02);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + t + dur);
+
+              osc.connect(filter);
+              filter.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(now + t);
+              osc.stop(now + t + dur + 0.03);
+            });
+          });
+
+          // シンバル＆クラッカー風きらめきノイズ
+          if (this.noiseBuffer) {
+            const src = ctx.createBufferSource();
+            src.buffer = this.noiseBuffer;
+            const hp = ctx.createBiquadFilter();
+            hp.type = 'highpass';
+            hp.frequency.setValueAtTime(3200, now + 0.4);
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0.14, now + 0.4);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+            src.connect(hp);
+            hp.connect(g);
+            g.connect(ctx.destination);
+            src.start(now + 0.4);
+            src.stop(now + 0.92);
+          }
+        }
+      }
+
+      // ============================================================
+      // 2. フルスクリーンCanvas 紙吹雪＆打ち上げ花火エンジン
+      // ============================================================
+      class CelebrationCanvas {
+        constructor(canvasEl, soundEngine) {
+          this.canvas = canvasEl;
+          this.ctx = canvasEl.getContext('2d');
+          this.sound = soundEngine;
+          this.confetti = [];
+          this.sparks = [];
+          this.rafId = null;
+          this.fireworkTimers = [];
+          this.width = window.innerWidth;
+          this.height = window.innerHeight;
+          this.palette = [
+            '#fde047', '#f43f5e', '#38bdf8', '#34d399',
+            '#c084fc', '#fb923c', '#ffffff', '#f472b6',
+          ];
+
+          window.addEventListener('resize', () => this.resize());
+        }
+
+        resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          this.width = window.innerWidth;
+          this.height = window.innerHeight;
+          this.canvas.width = Math.floor(this.width * dpr);
+          this.canvas.height = Math.floor(this.height * dpr);
+          this.canvas.style.width = `${this.width}px`;
+          this.canvas.style.height = `${this.height}px`;
+          this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        /** 大量紙吹雪＆連続打ち上げ花火のフルフィナーレ開始 */
+        launchGrandFinale() {
+          this.stop();
+          this.resize();
+          this.canvas.classList.remove('hidden');
+
+          // 左右キャノン＆上部シャワーから大量の紙吹雪を発射
+          this.spawnConfettiBurst(0, this.height * 0.78, 95, -Math.PI / 3.2, 0.55);
+          this.spawnConfettiBurst(this.width, this.height * 0.78, 95, -Math.PI + Math.PI / 3.2, 0.55);
+          this.spawnTopConfetti(110);
+
+          // 打ち上げ花火を時間差で7発炸裂！
+          const burstSchedule = [60, 320, 620, 940, 1280, 1650, 2050];
+          burstSchedule.forEach((delay, idx) => {
+            const tid = setTimeout(() => {
+              const x = this.width * (0.14 + Math.random() * 0.72);
+              const y = this.height * (0.14 + Math.random() * 0.36);
+              this.spawnFirework(x, y, idx % 2 === 0 ? 72 : 58);
+              this.sound.playFireworkPop();
+            }, delay);
+            this.fireworkTimers.push(tid);
+          });
+
+          this.startLoop();
+        }
+
+        /** スピード演出用の軽め紙吹雪 */
+        launchQuickBurst() {
+          this.stop();
+          this.resize();
+          this.canvas.classList.remove('hidden');
+          this.spawnConfettiBurst(this.width * 0.5, this.height * 0.45, 75, -Math.PI / 2, Math.PI * 1.6);
+          this.startLoop();
+        }
+
+        spawnConfettiBurst(originX, originY, count, baseAngle, spread) {
+          for (let i = 0; i < count; i++) {
+            const angle = baseAngle + (Math.random() - 0.5) * spread;
+            const speed = 10 + Math.random() * 14;
+            this.confetti.push({
+              x: originX,
+              y: originY,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed - Math.random() * 4,
+              w: 7 + Math.random() * 7,
+              h: 4 + Math.random() * 5,
+              color: this.palette[Math.floor(Math.random() * this.palette.length)],
+              rot: Math.random() * Math.PI * 2,
+              vRot: (Math.random() - 0.5) * 0.24,
+              tiltPhase: Math.random() * Math.PI * 2,
+              tiltSpeed: 0.08 + Math.random() * 0.12,
+              life: 1,
+              decay: 0.003 + Math.random() * 0.0025,
+            });
+          }
+        }
+
+        spawnTopConfetti(count) {
+          for (let i = 0; i < count; i++) {
+            this.confetti.push({
+              x: Math.random() * this.width,
+              y: -20 - Math.random() * 260,
+              vx: (Math.random() - 0.5) * 3.5,
+              vy: 2.5 + Math.random() * 4.5,
+              w: 7 + Math.random() * 7,
+              h: 4 + Math.random() * 5,
+              color: this.palette[Math.floor(Math.random() * this.palette.length)],
+              rot: Math.random() * Math.PI * 2,
+              vRot: (Math.random() - 0.5) * 0.2,
+              tiltPhase: Math.random() * Math.PI * 2,
+              tiltSpeed: 0.08 + Math.random() * 0.1,
+              life: 1,
+              decay: 0.0025 + Math.random() * 0.002,
+            });
+          }
+        }
+
+        spawnFirework(cx, cy, count) {
+          const primaryColor = this.palette[Math.floor(Math.random() * this.palette.length)];
+          const secondaryColor = this.palette[Math.floor(Math.random() * this.palette.length)];
+
+          for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.14;
+            const speed = 2.4 + Math.random() * 6.8;
+            this.sparks.push({
+              x: cx,
+              y: cy,
+              prevX: cx,
+              prevY: cy,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              color: i % 3 === 0 ? secondaryColor : primaryColor,
+              size: 2.2 + Math.random() * 2.4,
+              life: 1,
+              decay: 0.015 + Math.random() * 0.015,
+            });
+          }
+        }
+
+        startLoop() {
+          if (this.rafId) return;
+          const tick = () => {
+            const ctx = this.ctx;
+            ctx.clearRect(0, 0, this.width, this.height);
+
+            // 紙吹雪の更新＆描画
+            for (let i = this.confetti.length - 1; i >= 0; i--) {
+              const p = this.confetti[i];
+              p.vx *= 0.985;
+              p.vy = p.vy * 0.99 + 0.22;
+              p.x += p.vx + Math.sin(p.tiltPhase) * 0.9;
+              p.y += p.vy;
+              p.rot += p.vRot;
+              p.tiltPhase += p.tiltSpeed;
+              p.life -= p.decay;
+
+              if (p.life <= 0 || p.y > this.height + 50) {
+                this.confetti.splice(i, 1);
+                continue;
+              }
+
+              ctx.save();
+              ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.4));
+              ctx.translate(p.x, p.y);
+              ctx.rotate(p.rot);
+              const flipScale = Math.cos(p.tiltPhase);
+              ctx.fillStyle = p.color;
+              ctx.fillRect(-p.w / 2, (-p.h * flipScale) / 2, p.w, Math.max(1.5, Math.abs(p.h * flipScale)));
+              ctx.restore();
+            }
+
+            // 花火スパークの更新＆描画
+            for (let i = this.sparks.length - 1; i >= 0; i--) {
+              const s = this.sparks[i];
+              s.prevX = s.x;
+              s.prevY = s.y;
+              s.vx *= 0.96;
+              s.vy = s.vy * 0.96 + 0.095;
+              s.x += s.vx;
+              s.y += s.vy;
+              s.life -= s.decay;
+
+              if (s.life <= 0) {
+                this.sparks.splice(i, 1);
+                continue;
+              }
+
+              ctx.save();
+              ctx.globalAlpha = Math.max(0, s.life);
+              ctx.strokeStyle = s.color;
+              ctx.lineWidth = s.size;
+              ctx.lineCap = 'round';
+              ctx.shadowBlur = 12;
+              ctx.shadowColor = s.color;
+              ctx.beginPath();
+              ctx.moveTo(s.prevX, s.prevY);
+              ctx.lineTo(s.x, s.y);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            if (this.confetti.length > 0 || this.sparks.length > 0 || this.fireworkTimers.length > 0) {
+              this.rafId = requestAnimationFrame(tick);
+            } else {
+              this.rafId = null;
+              this.canvas.classList.add('hidden');
+            }
+          };
+
+          this.rafId = requestAnimationFrame(tick);
+        }
+
+        stop() {
+          this.fireworkTimers.forEach((id) => clearTimeout(id));
+          this.fireworkTimers = [];
+          if (this.rafId) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+          }
+          this.confetti = [];
+          this.sparks = [];
+          this.ctx.clearRect(0, 0, this.width, this.height);
+          this.canvas.classList.add('hidden');
+        }
+      }
+
+      // ============================================================
+      // 3. 定数・アプリ状態管理
+      // ============================================================
+      const STORAGE_KEY = 'sekigae_flashy_app_v2';
+      const MAX_COLS = 6;
+      const MIN_COLS = 1;
+      const MAX_ROWS = 7;
+      const MIN_ROWS = 1;
+      const MAX_STUDENT_NO = 48;
+
+      /** デフォルト初期状態（横6列 × 縦7行、35人、後ろの行の端7席を自動で未使用にして空席ゼロ開始） */
+      function createDefaultState() {
+        const activeNumbers = [];
+        for (let i = 1; i <= 35; i++) activeNumbers.push(i);
+
+        // 6×7=42席のうち後ろの行の端から7席を初期で「使わない席」にしてピッタリ35席にする
+        const disabledSeats = {};
+        let toDisable = 42 - 35;
+        for (let r = MAX_ROWS - 1; r >= 0 && toDisable > 0; r--) {
+          for (let c = MAX_COLS - 1; c >= 0 && toDisable > 0; c--) {
+            disabledSeats[`${r}-${c}`] = true;
+            toDisable--;
+          }
+        }
+
+        return {
+          cols: 6,
+          rows: 7,
+          disabledSeats,
+          fixedSeats: {},
+          assignments: {},
+          activeNumbers,
+          editMode: 'toggleSeat', // 'toggleSeat' | 'fixSeat'
+          disallowEmptySeats: true,
+          effectMode: 'flashy', // 'flashy' | 'speed' | 'none'
+          soundEnabled: true,
+          viewMode: 'student', // 'student' | 'teacher'
+        };
+      }
+
+      let state = createDefaultState();
+
+      // 演出・ドラッグ・モーダル用ランタイム状態
+      let isShuffling = false;
+      let stageTimers = [];
+      let pendingFinalAssignments = null;
+      let currentModalSeatKey = null;
+      let pendingConfirmCallback = null;
+
+      // ドラッグ選択用状態（「🪑 使う席を選ぶ」モード）
+      let isDraggingSeats = false;
+      let dragTargetDisable = false;
+      let dragVisitedKeys = new Set();
+      let dragRemovedFixedCount = 0;
+
+      // 効果音＆Canvas演出インスタンス
+      const soundFX = new SynthSoundEngine();
+      const fxCanvas = new CelebrationCanvas(document.getElementById('fx-canvas'), soundFX);
+
+      // ============================================================
+      // 4. DOM要素キャッシュ
+      // ============================================================
+      const els = {
+        // ヘッダー
+        btnSoundToggle: document.getElementById('btn-sound-toggle'),
+        soundIcon: document.getElementById('sound-icon'),
+        soundLabel: document.getElementById('sound-label'),
+        btnPrint: document.getElementById('btn-print'),
+        btnResetAll: document.getElementById('btn-reset-all'),
+
+        // グリッド設定
+        btnColsDec: document.getElementById('btn-cols-dec'),
+        btnColsInc: document.getElementById('btn-cols-inc'),
+        displayCols: document.getElementById('display-cols'),
+        btnRowsDec: document.getElementById('btn-rows-dec'),
+        btnRowsInc: document.getElementById('btn-rows-inc'),
+        displayRows: document.getElementById('display-rows'),
+        summaryTotalCells: document.getElementById('summary-total-cells'),
+        summaryDisabledCells: document.getElementById('summary-disabled-cells'),
+        summaryValidCells: document.getElementById('summary-valid-cells'),
+        chkDisallowEmpty: document.getElementById('chk-disallow-empty'),
+
+        // 人数・出席番号
+        inputQuickCount: document.getElementById('input-quick-count'),
+        btnCountDec: document.getElementById('btn-count-dec'),
+        btnCountInc: document.getElementById('btn-count-inc'),
+        customNumbersBadge: document.getElementById('custom-numbers-badge'),
+        btnToggleNumberPanel: document.getElementById('btn-toggle-number-panel'),
+        iconNumberPanelChevron: document.getElementById('icon-number-panel-chevron'),
+        numberSelectionPanel: document.getElementById('number-selection-panel'),
+        panelActiveCount: document.getElementById('panel-active-count'),
+        btnSelectAllNumbers: document.getElementById('btn-select-all-numbers'),
+        btnClearAllNumbers: document.getElementById('btn-clear-all-numbers'),
+        numberGrid: document.getElementById('number-grid'),
+
+        // 演出モード設定
+        effectModeBtns: document.querySelectorAll('.effect-mode-btn'),
+        effectModeDesc: document.getElementById('effect-mode-desc'),
+
+        // 固定席一覧
+        fixedListContainer: document.getElementById('fixed-list-container'),
+        btnClearAllFixed: document.getElementById('btn-clear-all-fixed'),
+
+        // チェッカー＆アクション
+        seatCheckerBanner: document.getElementById('seat-checker-banner'),
+        checkerValidSeats: document.getElementById('checker-valid-seats'),
+        checkerStudentCount: document.getElementById('checker-student-count'),
+        checkerStatusBadge: document.getElementById('checker-status-badge'),
+        btnAutoAdjust: document.getElementById('btn-auto-adjust'),
+        btnShuffle: document.getElementById('btn-shuffle'),
+        btnShuffleLabel: document.getElementById('btn-shuffle-label'),
+        btnViewStudent: document.getElementById('btn-view-student'),
+        btnViewTeacher: document.getElementById('btn-view-teacher'),
+        btnClearUnfixed: document.getElementById('btn-clear-unfixed'),
+
+        // 教室・編集タブ
+        printableArea: document.getElementById('printable-area'),
+        tabModeToggle: document.getElementById('tab-mode-toggle'),
+        tabModeFix: document.getElementById('tab-mode-fix'),
+        editModeHint: document.getElementById('edit-mode-hint'),
+        viewModeBadge: document.getElementById('view-mode-badge'),
+        classroomLayout: document.getElementById('classroom-layout'),
+        blackboardBlock: document.getElementById('blackboard-block'),
+        teacherDeskWrapper: document.getElementById('teacher-desk-wrapper'),
+        seatGrid: document.getElementById('seat-grid'),
+
+        // 印刷メタ
+        printViewSubtitle: document.getElementById('print-view-subtitle'),
+        printDate: document.getElementById('print-date'),
+        printStats: document.getElementById('print-stats'),
+
+        // 演出オーバーレイ
+        countdownOverlay: document.getElementById('countdown-overlay'),
+        countdownRing: document.getElementById('countdown-ring'),
+        countdownText: document.getElementById('countdown-text'),
+        finaleOverlay: document.getElementById('finale-overlay'),
+        finaleBannerCard: document.getElementById('finale-banner-card'),
+        finaleSummaryText: document.getElementById('finale-summary-text'),
+        btnCloseFinale: document.getElementById('btn-close-finale'),
+        skipStageBar: document.getElementById('skip-stage-bar'),
+        stagePhasePill: document.getElementById('stage-phase-pill'),
+        btnSkipEffect: document.getElementById('btn-skip-effect'),
+
+        // 固定モーダル
+        fixModal: document.getElementById('fix-modal'),
+        fixModalSubtitle: document.getElementById('fix-modal-subtitle'),
+        btnCloseFixModal: document.getElementById('btn-close-fix-modal'),
+        btnCancelFixModal: document.getElementById('btn-cancel-fix-modal'),
+        btnSaveFixModal: document.getElementById('btn-save-fix-modal'),
+        btnModalUnfix: document.getElementById('btn-modal-unfix'),
+        modalStudentSelect: document.getElementById('modal-student-select'),
+        modalNumberPicker: document.getElementById('modal-number-picker'),
+        modalValidationMsg: document.getElementById('modal-validation-msg'),
+
+        // 確認モーダル
+        confirmModal: document.getElementById('confirm-modal'),
+        confirmModalTitle: document.getElementById('confirm-modal-title'),
+        confirmModalMessage: document.getElementById('confirm-modal-message'),
+        btnConfirmCancel: document.getElementById('btn-confirm-cancel'),
+        btnConfirmOk: document.getElementById('btn-confirm-ok'),
+
+        // トースト
+        toastContainer: document.getElementById('toast-container'),
+      };
+
+      // ============================================================
+      // 5. ユーティリティ関数
+      // ============================================================
+      function seatKey(r, c) {
+        return `${r}-${c}`;
+      }
+
+      function parseSeatKey(key) {
+        const [r, c] = key.split('-').map(Number);
+        return { r, c };
+      }
+
+      function formatSeatPosition(key) {
+        const { r, c } = parseSeatKey(key);
+        return `前から${r + 1}行目・左から${c + 1}列目`;
+      }
+
+      function getAllSeatKeys() {
+        const keys = [];
+        for (let r = 0; r < state.rows; r++) {
+          for (let c = 0; c < state.cols; c++) {
+            keys.push(seatKey(r, c));
+          }
+        }
+        return keys;
+      }
+
+      function getValidSeatKeys() {
+        return getAllSeatKeys().filter((k) => !state.disabledSeats[k]);
+      }
+
+      function findFixedSeatByStudent(studentNo) {
+        const target = Number(studentNo);
+        for (const [k, num] of Object.entries(state.fixedSeats)) {
+          if (Number(num) === target) return k;
+        }
+        return null;
+      }
+
+      function isContiguousFromOne(nums) {
+        for (let i = 0; i < nums.length; i++) {
+          if (nums[i] !== i + 1) return false;
+        }
+        return true;
+      }
+
+      /** 公平な Fisher-Yates シャッフル */
+      function fisherYatesShuffle(arr) {
+        const copy = arr.slice();
+        for (let i = copy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const tmp = copy[i];
+          copy[i] = copy[j];
+          copy[j] = tmp;
+        }
+        return copy;
+      }
+
+      // ============================================================
+      // 6. トースト＆カスタム確認モーダル（alert/confirm完全不使用）
+      // ============================================================
+      function showToast(message, type = 'info') {
+        const styles = {
+          info: 'bg-slate-800 text-white border-slate-700',
+          success: 'bg-emerald-700 text-white border-emerald-600',
+          warning: 'bg-amber-600 text-white border-amber-500',
+          error: 'bg-rose-600 text-white border-rose-500',
+        };
+        const toast = document.createElement('div');
+        toast.className = `toast-enter pointer-events-auto px-4 py-3 rounded-2xl shadow-xl border text-xs sm:text-sm font-bold ${styles[type] || styles.info}`;
+        toast.textContent = message;
+        els.toastContainer.appendChild(toast);
+
+        setTimeout(() => {
+          toast.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(8px)';
+          setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+          }, 260);
+        }, 3200);
+      }
+
+      function openConfirmModal(title, message, onConfirm) {
+        els.confirmModalTitle.textContent = title;
+        els.confirmModalMessage.textContent = message;
+        pendingConfirmCallback = onConfirm;
+        els.confirmModal.classList.remove('hidden');
+        els.confirmModal.classList.add('flex');
+      }
+
+      function closeConfirmModal() {
+        els.confirmModal.classList.add('hidden');
+        els.confirmModal.classList.remove('flex');
+        pendingConfirmCallback = null;
+      }
+
+      // ============================================================
+      // 7. localStorage 自動保存＆安全復元
+      // ============================================================
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (err) {
+          console.warn('localStorage 保存をスキップ:', err);
+        }
+      }
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return;
+
+          const next = createDefaultState();
+          next.disabledSeats = {};
+
+          if (Number.isInteger(parsed.cols) && parsed.cols >= MIN_COLS && parsed.cols <= MAX_COLS) {
+            next.cols = parsed.cols;
+          }
+          if (Number.isInteger(parsed.rows) && parsed.rows >= MIN_ROWS && parsed.rows <= MAX_ROWS) {
+            next.rows = parsed.rows;
+          }
+          if (Array.isArray(parsed.activeNumbers)) {
+            next.activeNumbers = Array.from(
+              new Set(
+                parsed.activeNumbers
+                  .map(Number)
+                  .filter((n) => Number.isInteger(n) && n >= 1 && n <= MAX_STUDENT_NO)
+              )
+            ).sort((a, b) => a - b);
+          }
+          if (parsed.disabledSeats && typeof parsed.disabledSeats === 'object') {
+            Object.keys(parsed.disabledSeats).forEach((k) => {
+              const { r, c } = parseSeatKey(k);
+              if (r >= 0 && r < next.rows && c >= 0 && c < next.cols && parsed.disabledSeats[k]) {
+                next.disabledSeats[k] = true;
+              }
+            });
+          }
+          if (parsed.fixedSeats && typeof parsed.fixedSeats === 'object') {
+            const used = new Set();
+            Object.entries(parsed.fixedSeats).forEach(([k, val]) => {
+              const { r, c } = parseSeatKey(k);
+              const num = Number(val);
+              if (
+                r >= 0 && r < next.rows &&
+                c >= 0 && c < next.cols &&
+                !next.disabledSeats[k] &&
+                next.activeNumbers.includes(num) &&
+                !used.has(num)
+              ) {
+                next.fixedSeats[k] = num;
+                used.add(num);
+              }
+            });
+          }
+          if (parsed.assignments && typeof parsed.assignments === 'object') {
+            Object.entries(parsed.assignments).forEach(([k, val]) => {
+              const { r, c } = parseSeatKey(k);
+              const num = Number(val);
+              if (
+                r >= 0 && r < next.rows &&
+                c >= 0 && c < next.cols &&
+                !next.disabledSeats[k] &&
+                next.activeNumbers.includes(num)
+              ) {
+                next.assignments[k] = num;
+              }
+            });
+          }
+          Object.entries(next.fixedSeats).forEach(([k, num]) => {
+            next.assignments[k] = num;
+          });
+
+          if (parsed.editMode === 'toggleSeat' || parsed.editMode === 'fixSeat') {
+            next.editMode = parsed.editMode;
+          }
+          if (typeof parsed.disallowEmptySeats === 'boolean') {
+            next.disallowEmptySeats = parsed.disallowEmptySeats;
+          }
+          if (['flashy', 'speed', 'none'].includes(parsed.effectMode)) {
+            next.effectMode = parsed.effectMode;
+          }
+          if (typeof parsed.soundEnabled === 'boolean') {
+            next.soundEnabled = parsed.soundEnabled;
+          }
+          if (parsed.viewMode === 'student' || parsed.viewMode === 'teacher') {
+            next.viewMode = parsed.viewMode;
+          }
+
+          state = next;
+          soundFX.setEnabled(state.soundEnabled);
+        } catch (err) {
+          console.warn('保存データの読み込みに失敗:', err);
+          state = createDefaultState();
+        }
+      }
+
+      /** 範囲外・無効席・対象外出席番号の整合性をクリーンアップ */
+      function sanitizeSeatData() {
+        const activeSet = new Set(state.activeNumbers);
+        let removedFixedCount = 0;
+
+        Object.keys(state.disabledSeats).forEach((k) => {
+          const { r, c } = parseSeatKey(k);
+          if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) {
+            delete state.disabledSeats[k];
+          }
+        });
+
+        Object.entries(state.fixedSeats).forEach(([k, num]) => {
+          const { r, c } = parseSeatKey(k);
+          if (
+            r < 0 || r >= state.rows ||
+            c < 0 || c >= state.cols ||
+            state.disabledSeats[k] ||
+            !activeSet.has(Number(num))
+          ) {
+            delete state.fixedSeats[k];
+            removedFixedCount++;
+          }
+        });
+
+        Object.entries(state.assignments).forEach(([k, num]) => {
+          const { r, c } = parseSeatKey(k);
+          if (
+            r < 0 || r >= state.rows ||
+            c < 0 || c >= state.cols ||
+            state.disabledSeats[k] ||
+            !activeSet.has(Number(num))
+          ) {
+            delete state.assignments[k];
+          }
+        });
+
+        Object.entries(state.fixedSeats).forEach(([k, num]) => {
+          state.assignments[k] = num;
+        });
+
+        return { removedFixedCount };
+      }
+
+      // ============================================================
+      // 8. 使う席の自動調整（空席ゼロ調整）＆バリデーション
+      // ============================================================
+
+      /**
+       * 人数に合わせて「使う席」を自動調整する
+       * - 余剰席がある場合：後ろの行の右端から順に「使わない席」へ変更（固定席は極力保護）
+       * - 座席が足りない場合：前の行の左端から「使わない席」を有効化（総マス不足ならグリッドも最大6×7まで自動拡張）
+       */
+      function autoAdjustSeatsToMatchStudents() {
+        if (isShuffling) return;
+        const target = state.activeNumbers.length;
+        const maxPossible = MAX_COLS * MAX_ROWS; // 42
+
+        if (target === 0) {
+          showToast('対象生徒が0人です。人数を1人以上に設定してください。', 'warning');
+          return;
+        }
+
+        if (target > maxPossible) {
+          showToast(`最大座席数（${MAX_COLS}列×${MAX_ROWS}行＝${maxPossible}席）を超えています。対象人数を${maxPossible}人以下にしてください。`, 'error');
+          return;
+        }
+
+        // 現在の総マスが人数より少なければ、最大6×7の範囲で自動拡張
+        while (state.cols * state.rows < target) {
+          if (state.rows < MAX_ROWS) {
+            state.rows++;
+          } else if (state.cols < MAX_COLS) {
+            state.cols++;
+          } else {
+            break;
+          }
+        }
+
+        const validKeys = getValidSeatKeys();
+        let diff = validKeys.length - target;
+
+        if (diff > 0) {
+          // 余剰席を後ろの行の端（r=rows-1..0, c=cols-1..0）から無効化（固定席以外を優先）
+          const backToFront = [];
+          for (let r = state.rows - 1; r >= 0; r--) {
+            for (let c = state.cols - 1; c >= 0; c--) {
+              backToFront.push(seatKey(r, c));
+            }
+          }
+
+          // 第1パス：固定席以外の有効席を無効化
+          for (const k of backToFront) {
+            if (diff <= 0) break;
+            if (!state.disabledSeats[k] && state.fixedSeats[k] === undefined) {
+              state.disabledSeats[k] = true;
+              delete state.assignments[k];
+              diff--;
+            }
+          }
+          // 第2パス：それでも余る場合は固定席も含めて調整
+          for (const k of backToFront) {
+            if (diff <= 0) break;
+            if (!state.disabledSeats[k]) {
+              state.disabledSeats[k] = true;
+              delete state.fixedSeats[k];
+              delete state.assignments[k];
+              diff--;
+            }
+          }
+        } else if (diff < 0) {
+          // 不足分を前の行の左から有効化
+          let need = -diff;
+          for (let r = 0; r < state.rows && need > 0; r++) {
+            for (let c = 0; c < state.cols && need > 0; c++) {
+              const k = seatKey(r, c);
+              if (state.disabledSeats[k]) {
+                delete state.disabledSeats[k];
+                need--;
+              }
+            }
+          }
+        }
+
+        sanitizeSeatData();
+        saveState();
+        renderAll();
+        soundFX.playClick(880);
+        showToast(`使う席を ${target}席 に自動調整しました（空席ゼロ）！`, 'success');
+      }
+
+      /** シャッフル実行前の整合性チェック */
+      function validateForShuffle() {
+        const validCount = getValidSeatKeys().length;
+        const studentCount = state.activeNumbers.length;
+
+        if (studentCount === 0) {
+          return {
+            ok: false,
+            message: '対象生徒が0人です。人数を1人以上に設定してください。',
+          };
+        }
+
+        if (validCount < studentCount) {
+          return {
+            ok: false,
+            message: `使う席（${validCount}席）が対象生徒（${studentCount}人）より ${studentCount - validCount}席 足りません。「⚡ 人数に合わせて使う席を自動調整」を押してください。`,
+          };
+        }
+
+        if (state.disallowEmptySeats && validCount > studentCount) {
+          return {
+            ok: false,
+            message: `使う席（${validCount}席）が対象生徒（${studentCount}人）より ${validCount - studentCount}席 余り、空席ができてしまいます。「⚡ 自動調整」で空席ゼロに揃えてください。`,
+          };
+        }
+
+        return { ok: true, message: '' };
+      }
+
+      // ============================================================
+      // 9. UIレンダリング
+      // ============================================================
+      function renderAll(options = {}) {
+        const { quickPop = false } = options;
+        renderControlsAndChecker();
+        renderNumberGrid();
+        renderFixedList();
+        renderClassroom({ quickPop });
+        renderPrintMetadata();
+      }
+
+      function renderControlsAndChecker() {
+        const totalCells = state.cols * state.rows;
+        const validCount = getValidSeatKeys().length;
+        const disabledCount = totalCells - validCount;
+        const studentCount = state.activeNumbers.length;
+
+        // 効果音ボタン
+        if (state.soundEnabled) {
+          els.btnSoundToggle.className = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 text-xs sm:text-sm font-bold transition active:scale-95';
+          els.soundIcon.textContent = '🔊';
+          els.soundLabel.textContent = '効果音 ON';
+        } else {
+          els.btnSoundToggle.className = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 text-xs sm:text-sm font-bold transition active:scale-95';
+          els.soundIcon.textContent = '🔇';
+          els.soundLabel.textContent = '効果音 OFF';
+        }
+
+        // グリッド数値
+        els.displayCols.textContent = state.cols;
+        els.displayRows.textContent = state.rows;
+        els.btnColsDec.disabled = state.cols <= MIN_COLS || isShuffling;
+        els.btnColsInc.disabled = state.cols >= MAX_COLS || isShuffling;
+        els.btnRowsDec.disabled = state.rows <= MIN_ROWS || isShuffling;
+        els.btnRowsInc.disabled = state.rows >= MAX_ROWS || isShuffling;
+
+        els.summaryTotalCells.textContent = totalCells;
+        els.summaryDisabledCells.textContent = disabledCount;
+        els.summaryValidCells.textContent = validCount;
+        els.chkDisallowEmpty.checked = state.disallowEmptySeats;
+
+        // 人数入力
+        if (document.activeElement !== els.inputQuickCount) {
+          els.inputQuickCount.value = studentCount;
+        }
+        els.panelActiveCount.textContent = studentCount;
+        els.customNumbersBadge.classList.toggle('hidden', isContiguousFromOne(state.activeNumbers));
+
+        // 演出モードボタン
+        const modeDescriptions = {
+          flashy: 'ステージ照明・カウントダウン・高速ルーレット・1席ずつ確定・花火＆紙吹雪のフル演出！',
+          speed: '約1秒の高速ルーレット＋一斉ポップ確定＋軽快な紙吹雪でサクサク席替え！',
+          none: '演出なしで即座に新しい座席表を表示します。',
+        };
+        els.effectModeDesc.textContent = modeDescriptions[state.effectMode];
+        els.effectModeBtns.forEach((btn) => {
+          const active = btn.dataset.effectMode === state.effectMode;
+          btn.className = active
+            ? 'effect-mode-btn py-2 px-1.5 rounded-lg text-xs font-black bg-white text-pink-700 shadow-xs transition'
+            : 'effect-mode-btn py-2 px-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-700 transition';
+        });
+
+        // リアルタイム座席数チェッカー
+        els.checkerValidSeats.textContent = validCount;
+        els.checkerStudentCount.textContent = studentCount;
+
+        if (studentCount === 0) {
+          els.seatCheckerBanner.className = 'rounded-2xl border-2 border-rose-300 bg-rose-50 text-rose-900 px-4 py-3.5 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+          els.checkerStatusBadge.className = 'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-sm font-black bg-rose-600 text-white';
+          els.checkerStatusBadge.textContent = '⚠️ 対象生徒を1人以上にしてください';
+          els.btnAutoAdjust.classList.add('hidden');
+        } else if (validCount === studentCount) {
+          els.seatCheckerBanner.className = 'rounded-2xl border-2 border-emerald-300 bg-emerald-50 text-emerald-950 px-4 py-3.5 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+          els.checkerStatusBadge.className = 'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-sm font-black bg-emerald-600 text-white';
+          els.checkerStatusBadge.textContent = '✅ ピッタリ！（空席なし）';
+          els.btnAutoAdjust.classList.add('hidden');
+        } else if (validCount > studentCount) {
+          const extra = validCount - studentCount;
+          els.seatCheckerBanner.className = 'rounded-2xl border-2 border-amber-300 bg-amber-50 text-amber-950 px-4 py-3.5 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+          els.checkerStatusBadge.className = 'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-sm font-black bg-amber-500 text-white';
+          els.checkerStatusBadge.textContent = `⚠️ ${extra}席余り（空席ができます）`;
+          els.btnAutoAdjust.classList.remove('hidden');
+        } else {
+          const shortage = studentCount - validCount;
+          els.seatCheckerBanner.className = 'rounded-2xl border-2 border-rose-300 bg-rose-50 text-rose-950 px-4 py-3.5 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+          els.checkerStatusBadge.className = 'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-sm font-black bg-rose-600 text-white';
+          els.checkerStatusBadge.textContent = `🚨 ${shortage}席不足しています`;
+          els.btnAutoAdjust.classList.remove('hidden');
+        }
+
+        // 編集モードタブ
+        if (state.editMode === 'toggleSeat') {
+          els.tabModeToggle.className = 'px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black bg-emerald-600 text-white shadow-sm transition flex items-center justify-center gap-1.5';
+          els.tabModeFix.className = 'px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1.5';
+          els.editModeHint.textContent = '💡 座席をクリックまたはドラッグして「使う席 / 使わない席」を自由に切り替えられます。';
+        } else {
+          els.tabModeFix.className = 'px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black bg-amber-500 text-white shadow-sm transition flex items-center justify-center gap-1.5';
+          els.tabModeToggle.className = 'px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1.5';
+          els.editModeHint.textContent = '🔒 有効な座席をクリックすると、出席番号（1〜48）をその席に固定・解除できます。';
+        }
+
+        // 視点切り替え
+        if (state.viewMode === 'student') {
+          els.btnViewStudent.className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-black bg-white text-indigo-700 shadow-2xs transition';
+          els.btnViewTeacher.className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-500 hover:text-slate-700 transition';
+          els.viewModeBadge.textContent = '黒板が上（生徒視点）';
+        } else {
+          els.btnViewTeacher.className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-black bg-white text-indigo-700 shadow-2xs transition';
+          els.btnViewStudent.className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-500 hover:text-slate-700 transition';
+          els.viewModeBadge.textContent = '黒板が下（先生視点・180°反転）';
+        }
+
+        // シャッフルボタン
+        els.btnShuffle.disabled = isShuffling;
+        els.btnShuffleLabel.textContent = isShuffling
+          ? '演出中...'
+          : state.effectMode === 'flashy'
+            ? 'ド派手に席替えスタート！'
+            : '席替えスタート！';
+      }
+
+      /** 1〜48番 個別ON/OFFボタン一覧 */
+      function renderNumberGrid() {
+        const activeSet = new Set(state.activeNumbers);
+        const fixedSet = new Set(Object.values(state.fixedSeats).map(Number));
+        const frag = document.createDocumentFragment();
+
+        for (let num = 1; num <= MAX_STUDENT_NO; num++) {
+          const isActive = activeSet.has(num);
+          const isFixed = fixedSet.has(num);
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.disabled = isShuffling;
+
+          let cls = 'relative h-9 rounded-lg text-xs font-extrabold border transition flex items-center justify-center active:scale-95 ';
+          if (isActive && isFixed) {
+            cls += 'bg-amber-100 border-amber-400 text-amber-950 hover:bg-amber-200';
+          } else if (isActive) {
+            cls += 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 shadow-2xs';
+          } else {
+            cls += 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100';
+          }
+
+          btn.className = cls;
+          btn.innerHTML = isFixed
+            ? `<span>${num}</span><span class="absolute -top-1 -right-1 text-[9px] leading-none">🔒</span>`
+            : `<span>${num}</span>`;
+
+          btn.addEventListener('click', () => handleToggleSingleNumber(num));
+          frag.appendChild(btn);
+        }
+
+        els.numberGrid.innerHTML = '';
+        els.numberGrid.appendChild(frag);
+      }
+
+      /** 固定中座席一覧 */
+      function renderFixedList() {
+        const entries = Object.entries(state.fixedSeats).sort((a, b) => Number(a[1]) - Number(b[1]));
+
+        if (entries.length === 0) {
+          els.btnClearAllFixed.classList.add('hidden');
+          els.fixedListContainer.innerHTML =
+            '<p class="text-xs text-slate-400 text-center py-3 bg-slate-50 rounded-xl border border-dashed border-slate-200">固定中の座席はありません。<br/>「🔒 席を固定する」タブから設定できます。</p>';
+          return;
+        }
+
+        els.btnClearAllFixed.classList.remove('hidden');
+        const frag = document.createDocumentFragment();
+
+        entries.forEach(([key, num]) => {
+          const row = document.createElement('div');
+          row.className = 'flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200';
+          row.innerHTML = `
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-yellow-500 text-white font-black text-xs shrink-0 shadow-2xs">${num}</span>
+              <div class="truncate">
+                <p class="text-xs font-extrabold text-amber-950 truncate">出席番号 ${num}番</p>
+                <p class="text-[11px] text-amber-700 truncate">${formatSeatPosition(key)}</p>
+              </div>
+            </div>
+          `;
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'text-xs font-bold px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 hover:text-rose-700 text-slate-600 border border-amber-200 shrink-0 transition';
+          btn.textContent = '解除';
+          btn.addEventListener('click', () => {
+            if (isShuffling) return;
+            delete state.fixedSeats[key];
+            saveState();
+            renderAll();
+            showToast(`出席番号 ${num}番 の固定を解除しました。`, 'info');
+          });
+
+          row.appendChild(btn);
+          frag.appendChild(row);
+        });
+
+        els.fixedListContainer.innerHTML = '';
+        els.fixedListContainer.appendChild(frag);
+      }
+
+      /** 教室＆座席グリッドを描画 */
+      function renderClassroom({ quickPop = false } = {}) {
+        const isTeacherView = state.viewMode === 'teacher';
+
+        // 黒板と座席グリッドの上下反転
+        if (isTeacherView) {
+          els.classroomLayout.classList.remove('flex-col');
+          els.classroomLayout.classList.add('flex-col-reverse');
+          els.blackboardBlock.classList.remove('flex-col');
+          els.blackboardBlock.classList.add('flex-col-reverse');
+          els.teacherDeskWrapper.classList.remove('mt-2');
+          els.teacherDeskWrapper.classList.add('mb-2');
+        } else {
+          els.classroomLayout.classList.remove('flex-col-reverse');
+          els.classroomLayout.classList.add('flex-col');
+          els.blackboardBlock.classList.remove('flex-col-reverse');
+          els.blackboardBlock.classList.add('flex-col');
+          els.teacherDeskWrapper.classList.remove('mb-2');
+          els.teacherDeskWrapper.classList.add('mt-2');
+        }
+
+        // タッチドラッグを快適にするため、使う席選択モード時は touch-none を付与
+        els.seatGrid.classList.toggle('touch-none', state.editMode === 'toggleSeat');
+        els.seatGrid.style.gridTemplateColumns = `repeat(${state.cols}, minmax(0, 1fr))`;
+
+        const rowOrder = [];
+        for (let r = 0; r < state.rows; r++) rowOrder.push(r);
+        if (isTeacherView) rowOrder.reverse();
+
+        const colOrder = [];
+        for (let c = 0; c < state.cols; c++) colOrder.push(c);
+        if (isTeacherView) colOrder.reverse();
+
+        const isDense = state.cols >= 6 || state.rows >= 7;
+        const frag = document.createDocumentFragment();
+
+        rowOrder.forEach((r) => {
+          colOrder.forEach((c) => {
+            const key = seatKey(r, c);
+            const isDisabled = Boolean(state.disabledSeats[key]);
+            const fixedNum = state.fixedSeats[key] !== undefined ? Number(state.fixedSeats[key]) : null;
+            const isFixed = fixedNum !== null;
+            const assignedNum = isFixed
+              ? fixedNum
+              : state.assignments[key] !== undefined
+                ? Number(state.assignments[key])
+                : null;
+
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.dataset.seatKey = key;
+            card.disabled = isShuffling;
+
+            let cls =
+              'seat-card relative w-full rounded-xl sm:rounded-2xl border-2 flex flex-col items-center justify-center transition-all select-none focus:outline-none focus:ring-2 focus:ring-indigo-500 ';
+            cls += isDense
+              ? 'min-h-[60px] sm:min-h-[76px] md:min-h-[82px] p-1 sm:p-2 '
+              : 'min-h-[72px] sm:min-h-[88px] md:min-h-[94px] p-2 sm:p-3 ';
+
+            if (isDisabled) {
+              cls +=
+                'seat-disabled-card bg-slate-100/80 border-dashed border-slate-300 text-slate-400 ' +
+                (state.editMode === 'toggleSeat'
+                  ? 'hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 cursor-pointer'
+                  : 'opacity-55 cursor-not-allowed');
+              card.innerHTML = `
+                <span class="text-sm sm:text-base font-black leading-none">×</span>
+                <span class="text-[10px] sm:text-xs font-bold mt-0.5">使わない</span>
+              `;
+            } else if (isFixed) {
+              cls +=
+                'seat-fixed-card bg-gradient-to-b from-amber-50 to-amber-100/90 border-amber-400 border-b-4 border-b-amber-500 text-amber-950 shadow-xs hover:brightness-98 cursor-pointer ';
+              card.innerHTML = `
+                <span class="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 text-xs sm:text-sm leading-none" title="固定席">🔒</span>
+                <span class="text-[9px] sm:text-[10px] font-black text-amber-700 hidden sm:block mb-0.5">固定</span>
+                <span class="seat-num ${isDense ? 'text-xl sm:text-2xl md:text-3xl' : 'text-2xl sm:text-3xl md:text-4xl'} font-black tabular-nums leading-none">${fixedNum}</span>
+              `;
+            } else if (assignedNum !== null) {
+              cls +=
+                'seat-normal-card bg-white border-slate-200 border-b-4 border-b-slate-300 text-slate-900 shadow-2xs hover:border-indigo-400 hover:bg-indigo-50/40 cursor-pointer ';
+              if (quickPop) cls += 'animate-quick-pop ';
+              card.innerHTML = `
+                <span class="seat-label text-[9px] sm:text-[10px] font-bold text-slate-400 hidden sm:block mb-0.5">出席番号</span>
+                <span class="seat-num ${isDense ? 'text-xl sm:text-2xl md:text-3xl' : 'text-2xl sm:text-3xl md:text-4xl'} font-black tabular-nums leading-none">${assignedNum}</span>
+              `;
+            } else {
+              cls +=
+                'seat-normal-card bg-emerald-50/40 border-emerald-200/90 border-b-4 border-b-emerald-300/80 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400 cursor-pointer ';
+              card.innerHTML = `
+                <span class="seat-num text-xs sm:text-sm font-extrabold">使う席</span>
+              `;
+            }
+
+            card.className = cls;
+
+            // インタラクション設定
+            if (state.editMode === 'toggleSeat') {
+              card.addEventListener('pointerdown', (e) => handleSeatPointerDown(e, key));
+              card.addEventListener('pointerenter', () => handleSeatPointerEnter(key));
+            } else {
+              card.addEventListener('click', () => {
+                if (isShuffling) return;
+                if (state.disabledSeats[key]) {
+                  showToast('「使わない席」には固定できません。「🪑 使う席を選ぶ」タブで先に有効にしてください。', 'warning');
+                  return;
+                }
+                openFixModal(key);
+              });
+            }
+
+            frag.appendChild(card);
+          });
+        });
+
+        els.seatGrid.innerHTML = '';
+        els.seatGrid.appendChild(frag);
+      }
+
+      /** 印刷メタデータ更新 */
+      function renderPrintMetadata() {
+        const now = new Date();
+        els.printDate.textContent = `作成日：${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+        els.printViewSubtitle.textContent =
+          state.viewMode === 'student'
+            ? '視点：生徒視点（黒板が上）'
+            : '視点：先生視点（黒板が下・教卓側から見た配置）';
+        els.printStats.textContent = `対象生徒：${state.activeNumbers.length}人 ／ 使う席：${getValidSeatKeys().length}席`;
+      }
+
+      // ============================================================
+      // 10. 「🪑 使う席を選ぶ」クリック＆ドラッグ選択（PC＆タッチ両対応）
+      // ============================================================
+      function applyToggleSeatState(key, disableFlag) {
+        if (dragVisitedKeys.has(key)) return;
+        dragVisitedKeys.add(key);
+
+        if (disableFlag) {
+          if (!state.disabledSeats[key]) {
+            state.disabledSeats[key] = true;
+            if (state.fixedSeats[key] !== undefined) {
+              delete state.fixedSeats[key];
+              dragRemovedFixedCount++;
+            }
+            delete state.assignments[key];
+            soundFX.playClick(420);
+          }
+        } else {
+          if (state.disabledSeats[key]) {
+            delete state.disabledSeats[key];
+            soundFX.playClick(720);
+          }
+        }
+        renderAll();
+      }
+
+      function handleSeatPointerDown(e, key) {
+        if (isShuffling || state.editMode !== 'toggleSeat') return;
+        e.preventDefault();
+        isDraggingSeats = true;
+        dragVisitedKeys = new Set();
+        dragRemovedFixedCount = 0;
+        dragTargetDisable = !Boolean(state.disabledSeats[key]);
+        applyToggleSeatState(key, dragTargetDisable);
+      }
+
+      function handleSeatPointerEnter(key) {
+        if (!isDraggingSeats || isShuffling || state.editMode !== 'toggleSeat') return;
+        applyToggleSeatState(key, dragTargetDisable);
+      }
+
+      // タッチスクリーンでの指ドラッグ対応
+      function handleGlobalPointerMove(e) {
+        if (!isDraggingSeats || isShuffling || state.editMode !== 'toggleSeat') return;
+        if (e.pointerType === 'touch') {
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const card = target ? target.closest('[data-seat-key]') : null;
+          if (card && card.dataset.seatKey) {
+            applyToggleSeatState(card.dataset.seatKey, dragTargetDisable);
+          }
+        }
+      }
+
+      function handleGlobalPointerUp() {
+        if (!isDraggingSeats) return;
+        isDraggingSeats = false;
+        dragVisitedKeys.clear();
+        if (dragRemovedFixedCount > 0) {
+          showToast(`使わない席に変更したため、固定席 ${dragRemovedFixedCount}件 を解除しました。`, 'warning');
+          dragRemovedFixedCount = 0;
+        }
+        saveState();
+      }
+
+      // ============================================================
+      // 11. 「🔒 席を固定する」モーダル制御（重複防止付き）
+      // ============================================================
+      function openFixModal(key) {
+        currentModalSeatKey = key;
+        const currentFixed = state.fixedSeats[key] !== undefined ? Number(state.fixedSeats[key]) : '';
+
+        els.fixModalSubtitle.textContent = `${formatSeatPosition(key)}（生徒視点基準）`;
+        buildFixModalControls(currentFixed);
+        validateFixModalSelection();
+
+        els.fixModal.classList.remove('hidden');
+        els.fixModal.classList.add('flex');
+      }
+
+      function closeFixModal() {
+        els.fixModal.classList.add('hidden');
+        els.fixModal.classList.remove('flex');
+        currentModalSeatKey = null;
+      }
+
+      function buildFixModalControls(selectedValue) {
+        const activeSet = new Set(state.activeNumbers);
+        els.modalStudentSelect.innerHTML = '';
+
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '— 固定しない —';
+        els.modalStudentSelect.appendChild(emptyOpt);
+
+        for (let num = 1; num <= MAX_STUDENT_NO; num++) {
+          const opt = document.createElement('option');
+          opt.value = String(num);
+          const fixedAt = findFixedSeatByStudent(num);
+          let label = `出席番号 ${num}番`;
+          if (fixedAt === currentModalSeatKey) {
+            label += '（この席に固定中）';
+          } else if (fixedAt) {
+            label += `（他席で固定済: ${formatSeatPosition(fixedAt)}）`;
+          } else if (!activeSet.has(num)) {
+            label += '（欠番・対象外）';
+          }
+          opt.textContent = label;
+          els.modalStudentSelect.appendChild(opt);
+        }
+
+        els.modalStudentSelect.value = selectedValue !== '' ? String(selectedValue) : '';
+        renderFixModalPicker();
+      }
+
+      function renderFixModalPicker() {
+        const activeSet = new Set(state.activeNumbers);
+        const selectedNum = els.modalStudentSelect.value ? Number(els.modalStudentSelect.value) : null;
+        const frag = document.createDocumentFragment();
+
+        for (let num = 1; num <= MAX_STUDENT_NO; num++) {
+          const fixedAt = findFixedSeatByStudent(num);
+          const isOtherFixed = fixedAt && fixedAt !== currentModalSeatKey;
+          const isActive = activeSet.has(num);
+          const isSelected = selectedNum === num;
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+
+          let cls = 'h-8 rounded-lg text-xs font-extrabold border transition flex items-center justify-center relative ';
+          if (isSelected) {
+            cls += isOtherFixed
+              ? 'bg-rose-600 border-rose-700 text-white ring-2 ring-rose-300'
+              : 'bg-amber-500 border-amber-600 text-white ring-2 ring-amber-300';
+          } else if (isOtherFixed) {
+            cls += 'bg-amber-50 border-amber-200 text-amber-700/75 hover:bg-rose-50 hover:border-rose-300';
+          } else if (isActive) {
+            cls += 'bg-white border-slate-200 text-slate-800 hover:border-amber-400 hover:bg-amber-50';
+          } else {
+            cls += 'bg-slate-50 border-slate-100 text-slate-300 hover:border-slate-300 hover:text-slate-500';
+          }
+
+          btn.className = cls;
+          btn.innerHTML = isOtherFixed
+            ? `<span>${num}</span><span class="absolute -top-1 -right-0.5 text-[8px]">🔒</span>`
+            : `<span>${num}</span>`;
+
+          btn.addEventListener('click', () => {
+            els.modalStudentSelect.value = selectedNum === num ? '' : String(num);
+            validateFixModalSelection();
+            renderFixModalPicker();
+          });
+
+          frag.appendChild(btn);
+        }
+
+        els.modalNumberPicker.innerHTML = '';
+        els.modalNumberPicker.appendChild(frag);
+      }
+
+      function validateFixModalSelection() {
+        const hasCurrent = state.fixedSeats[currentModalSeatKey] !== undefined;
+        els.btnModalUnfix.classList.toggle('hidden', !hasCurrent);
+
+        const val = els.modalStudentSelect.value;
+        if (!val) {
+          els.modalValidationMsg.classList.add('hidden');
+          els.btnSaveFixModal.disabled = false;
+          return;
+        }
+
+        const num = Number(val);
+        const fixedAt = findFixedSeatByStudent(num);
+
+        // 重複固定防止チェック
+        if (fixedAt && fixedAt !== currentModalSeatKey) {
+          els.modalValidationMsg.className = 'rounded-xl px-3.5 py-2.5 text-xs font-bold border bg-rose-50 border-rose-200 text-rose-700';
+          els.modalValidationMsg.textContent = `重複エラー：出席番号 ${num}番 はすでに別席（${formatSeatPosition(fixedAt)}）に固定されています。`;
+          els.btnSaveFixModal.disabled = true;
+          return;
+        }
+
+        // 欠番を選択した場合の親切な案内
+        if (!state.activeNumbers.includes(num)) {
+          els.modalValidationMsg.className = 'rounded-xl px-3.5 py-2.5 text-xs font-bold border bg-amber-50 border-amber-200 text-amber-800';
+          els.modalValidationMsg.textContent = `お知らせ：${num}番は現在欠番です。このまま保存すると自動的に対象生徒に追加して固定します。`;
+          els.btnSaveFixModal.disabled = false;
+          return;
+        }
+
+        els.modalValidationMsg.classList.add('hidden');
+        els.btnSaveFixModal.disabled = false;
+      }
+
+      function saveFixModal() {
+        if (!currentModalSeatKey) return;
+        const key = currentModalSeatKey;
+        const val = els.modalStudentSelect.value;
+
+        if (!val) {
+          if (state.fixedSeats[key] !== undefined) {
+            const oldNum = state.fixedSeats[key];
+            delete state.fixedSeats[key];
+            showToast(`出席番号 ${oldNum}番 の固定を解除しました。`, 'info');
+          }
+        } else {
+          const num = Number(val);
+          const fixedAt = findFixedSeatByStudent(num);
+          if (fixedAt && fixedAt !== key) {
+            validateFixModalSelection();
+            return;
+          }
+
+          if (!state.activeNumbers.includes(num)) {
+            state.activeNumbers.push(num);
+            state.activeNumbers.sort((a, b) => a - b);
+          }
+
+          // 他席に一時表示されていた同じ番号を消して重複表示を防止
+          Object.entries(state.assignments).forEach(([otherKey, otherNum]) => {
+            if (otherKey !== key && Number(otherNum) === num) {
+              delete state.assignments[otherKey];
+            }
+          });
+
+          state.fixedSeats[key] = num;
+          state.assignments[key] = num;
+          soundFX.playClick(920);
+          showToast(`出席番号 ${num}番 を ${formatSeatPosition(key)} に固定しました！`, 'success');
+        }
+
+        saveState();
+        closeFixModal();
+        renderAll();
+      }
+
+      // ============================================================
+      // 12. ド派手シャッフル演出＆スピード演出＆スキップ機能
+      // ============================================================
+      function scheduleStage(fn, ms) {
+        const id = setTimeout(fn, ms);
+        stageTimers.push(id);
+        return id;
+      }
+
+      function clearAllStageTimers() {
+        stageTimers.forEach((id) => clearTimeout(id));
+        stageTimers = [];
+      }
+
+      /** ステージモード・演出オーバーレイをすべてクリーンに終了し通常ビューへ戻す */
+      function exitStageMode(keepCanvas = false) {
+        clearAllStageTimers();
+        isShuffling = false;
+        pendingFinalAssignments = null;
+
+        document.body.classList.remove('stage-mode');
+        els.countdownOverlay.classList.add('hidden');
+        els.countdownOverlay.classList.remove('flex');
+        els.finaleOverlay.classList.add('hidden');
+        els.finaleOverlay.classList.remove('flex');
+        els.skipStageBar.classList.add('hidden');
+        els.skipStageBar.classList.remove('flex');
+        els.printableArea.classList.remove('animate-board-shake', 'animate-heavy-shake');
+
+        if (!keepCanvas) {
+          fxCanvas.stop();
+        }
+        renderAll({ quickPop: false });
+      }
+
+      /** 演出を途中スキップして即座に結果確定 */
+      function skipCurrentEffect() {
+        if (!isShuffling) return;
+        if (pendingFinalAssignments) {
+          state.assignments = pendingFinalAssignments;
+          saveState();
+        }
+        exitStageMode(false);
+        showToast('演出をスキップして席替え結果を確定しました！', 'success');
+      }
+
+      /** カウントダウンの1フレームを表示 */
+      function showCountdownFrame(label, isGo = false) {
+        els.countdownOverlay.classList.remove('hidden');
+        els.countdownOverlay.classList.add('flex');
+
+        // アニメーション再トリガー
+        els.countdownText.className = 'font-black tracking-tight select-none text-center px-4';
+        els.countdownRing.className = 'absolute w-48 h-48 sm:w-64 sm:h-64 rounded-full border-4 opacity-0';
+        void els.countdownText.offsetWidth;
+
+        els.countdownText.textContent = label;
+        if (isGo) {
+          els.countdownText.classList.add('text-5xl', 'sm:text-7xl', 'md:text-8xl', 'neon-cyan-text', 'animate-countdown-blast');
+          els.countdownRing.classList.add('border-cyan-300', 'animate-shock-ring');
+          triggerBoardShake(true);
+        } else {
+          els.countdownText.classList.add('text-8xl', 'sm:text-9xl', 'neon-gold-text', 'animate-countdown-blast');
+          els.countdownRing.classList.add('border-amber-300', 'animate-shock-ring');
+        }
+      }
+
+      /** 教室ボードに衝撃シェイクを付与 */
+      function triggerBoardShake(heavy = false) {
+        const cls = heavy ? 'animate-heavy-shake' : 'animate-board-shake';
+        els.printableArea.classList.remove('animate-board-shake', 'animate-heavy-shake');
+        void els.printableArea.offsetWidth;
+        els.printableArea.classList.add(cls);
+      }
+
+      /** 指定座席カードのDOMを取得 */
+      function getSeatCardElement(key) {
+        return els.seatGrid.querySelector(`[data-seat-key="${key}"]`);
+      }
+
+      /** 座席カードに高速ルーレット表示を適用 */
+      function setCardRouletteDisplay(card, num) {
+        if (!card) return;
+        card.classList.add('seat-rouletting');
+        card.classList.remove('seat-locked-stage', 'seat-just-locked');
+        const numEl = card.querySelector('.seat-num');
+        if (numEl) {
+          numEl.textContent = num !== null ? String(num) : '★';
+          numEl.className = 'seat-num text-2xl sm:text-3xl md:text-4xl font-black tabular-nums leading-none';
+        }
+      }
+
+      /** 座席カードをバシッ！と確定表示させる */
+      function lockSeatCardOnStage(card, finalNum) {
+        if (!card) return;
+        card.classList.remove('seat-rouletting');
+        card.classList.add('seat-locked-stage', 'seat-just-locked');
+
+        const isDense = state.cols >= 6 || state.rows >= 7;
+        if (finalNum !== null) {
+          card.innerHTML = `
+            <span class="seat-label text-[9px] sm:text-[10px] font-bold text-emerald-200 hidden sm:block mb-0.5">出席番号</span>
+            <span class="seat-num ${isDense ? 'text-xl sm:text-2xl md:text-3xl' : 'text-2xl sm:text-3xl md:text-4xl'} font-black tabular-nums leading-none">${finalNum}</span>
+          `;
+        } else {
+          card.innerHTML = `<span class="seat-num text-xs sm:text-sm font-extrabold text-emerald-200">空席</span>`;
+        }
+      }
+
+      /** メイン：席替え実行ハンドラ */
+      function executeShuffle() {
+        if (isShuffling) return;
+
+        // クリック直後にAudioContextを起動（ブラウザ自動再生ポリシー対策）
+        soundFX.ensureContext();
+
+        const validation = validateForShuffle();
+        if (!validation.ok) {
+          showToast(validation.message, 'error');
+          soundFX.playClick(260);
+          return;
+        }
+
+        const validSeats = getValidSeatKeys();
+        const fixedSeatSet = new Set(Object.keys(state.fixedSeats));
+        const fixedStudentSet = new Set(Object.values(state.fixedSeats).map(Number));
+
+        const unfixedSeats = validSeats.filter((k) => !fixedSeatSet.has(k));
+        const unfixedStudents = state.activeNumbers.filter((n) => !fixedStudentSet.has(n));
+
+        // 空席許可時も含めスロット配列をFisher-Yatesシャッフル
+        const slots = unfixedStudents.slice();
+        while (slots.length < unfixedSeats.length) {
+          slots.push(null);
+        }
+        const shuffledSlots = fisherYatesShuffle(slots);
+
+        // 最終配置マップを構築
+        const finalAssignments = {};
+        Object.entries(state.fixedSeats).forEach(([k, num]) => {
+          finalAssignments[k] = Number(num);
+        });
+        unfixedSeats.forEach((k, idx) => {
+          if (shuffledSlots[idx] !== null) {
+            finalAssignments[k] = shuffledSlots[idx];
+          }
+        });
+
+        // モード1：演出なし（または固定以外の席が0）
+        if (state.effectMode === 'none' || unfixedSeats.length === 0) {
+          state.assignments = finalAssignments;
+          saveState();
+          renderAll({ quickPop: true });
+          soundFX.playSeatLock(1, 1);
+          showToast('席替えが完了しました！', 'success');
+          return;
+        }
+
+        // モード2：スピード演出
+        if (state.effectMode === 'speed') {
+          runSpeedShuffle(unfixedSeats, unfixedStudents, finalAssignments);
+          return;
+        }
+
+        // モード3：ド派手フル演出！
+        runFlashyStageShuffle(unfixedSeats, unfixedStudents, finalAssignments);
+      }
+
+      /** スピード演出（約1.1秒） */
+      function runSpeedShuffle(unfixedSeats, unfixedStudents, finalAssignments) {
+        isShuffling = true;
+        pendingFinalAssignments = finalAssignments;
+        renderControlsAndChecker();
+
+        const pool = unfixedStudents.length > 0 ? unfixedStudents : state.activeNumbers;
+        const steps = 12;
+        let elapsed = 0;
+
+        for (let i = 0; i < steps; i++) {
+          const dt = 65 + i * 6;
+          elapsed += dt;
+          scheduleStage(() => {
+            soundFX.playRouletteTick(i / steps);
+            unfixedSeats.forEach((key) => {
+              const card = getSeatCardElement(key);
+              const randNum = pool[Math.floor(Math.random() * pool.length)];
+              setCardRouletteDisplay(card, randNum);
+            });
+          }, elapsed);
+        }
+
+        scheduleStage(() => {
+          state.assignments = finalAssignments;
+          saveState();
+          isShuffling = false;
+          pendingFinalAssignments = null;
+          renderAll({ quickPop: true });
+          soundFX.playFanfare();
+          fxCanvas.launchQuickBurst();
+          showToast('⚡ スピード席替えが完了しました！', 'success');
+        }, elapsed + 120);
+      }
+
+      /** ド派手フル演出（ステージ照明 → カウントダウン → 高速ルーレット → 順次確定 → 花火＆紙吹雪フィナーレ） */
+      function runFlashyStageShuffle(unfixedSeats, unfixedStudents, finalAssignments) {
+        isShuffling = true;
+        pendingFinalAssignments = finalAssignments;
+        clearAllStageTimers();
+
+        // ステージモード突入！
+        document.body.classList.add('stage-mode');
+        els.skipStageBar.classList.remove('hidden');
+        els.skipStageBar.classList.add('flex');
+        els.stagePhasePill.textContent = 'COUNTDOWN';
+        renderControlsAndChecker();
+
+        // 座席ボードが画面中央に見えやすいようスムーズスクロール
+        els.printableArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // -------- Phase 1: 巨大カウントダウン（0ms 〜 2250ms） --------
+        scheduleStage(() => {
+          showCountdownFrame('3', false);
+          soundFX.playCountdown(3);
+        }, 120);
+
+        scheduleStage(() => {
+          showCountdownFrame('2', false);
+          soundFX.playCountdown(2);
+        }, 780);
+
+        scheduleStage(() => {
+          showCountdownFrame('1', false);
+          soundFX.playCountdown(1);
+        }, 1440);
+
+        scheduleStage(() => {
+          showCountdownFrame('SHUFFLE!!', true);
+          soundFX.playShuffleGo();
+        }, 2080);
+
+        // -------- Phase 2: 高速ルーレットフェーズ（2680ms 〜 4550ms） --------
+        const rouletteStartMs = 2660;
+        const pool = unfixedStudents.length > 0 ? unfixedStudents : state.activeNumbers;
+        const rouletteTicks = 24;
+        let rouletteElapsed = rouletteStartMs;
+
+        scheduleStage(() => {
+          els.countdownOverlay.classList.add('hidden');
+          els.countdownOverlay.classList.remove('flex');
+          els.stagePhasePill.textContent = 'HYPER ROULETTE!!';
+        }, rouletteStartMs);
+
+        for (let t = 0; t < rouletteTicks; t++) {
+          const progress = t / (rouletteTicks - 1);
+          const stepDelay = Math.max(48, Math.round(92 - progress * 40));
+          rouletteElapsed += stepDelay;
+
+          scheduleStage(() => {
+            soundFX.playRouletteTick(progress);
+            unfixedSeats.forEach((key) => {
+              const card = getSeatCardElement(key);
+              const randNum = pool[Math.floor(Math.random() * pool.length)];
+              setCardRouletteDisplay(card, randNum);
+            });
+          }, rouletteElapsed);
+        }
+
+        // -------- Phase 3: 1席ずつバシッ！とウェーブ確定（全体約3.2〜4.8秒に自動調整） --------
+        const lockOrder = fisherYatesShuffle(unfixedSeats);
+        const totalToLock = lockOrder.length;
+        // 席数に応じて1席あたりの基本間隔を自動計算（だれない爽快テンポ）
+        const targetRevealDuration = Math.min(4400, Math.max(1600, totalToLock * 105));
+        const baseStepMs = Math.max(68, Math.floor(targetRevealDuration / totalToLock));
+
+        let revealElapsed = rouletteElapsed + 120;
+        const remainingSet = new Set(lockOrder);
+
+        scheduleStage(() => {
+          els.stagePhasePill.textContent = 'SEAT LOCK-IN!!';
+        }, revealElapsed);
+
+        lockOrder.forEach((key, idx) => {
+          // ラスト3席は少しだけタメを作って盛り上げる！
+          const isFinalTrio = totalToLock >= 5 && idx >= totalToLock - 3;
+          const stepWait = isFinalTrio ? Math.max(baseStepMs + 165, 290) : baseStepMs;
+          revealElapsed += stepWait;
+
+          scheduleStage(() => {
+            remainingSet.delete(key);
+
+            // まだ確定していない席は引き続き高速シャッフルし続ける
+            remainingSet.forEach((remKey) => {
+              const remCard = getSeatCardElement(remKey);
+              const randNum = pool[Math.floor(Math.random() * pool.length)];
+              setCardRouletteDisplay(remCard, randNum);
+            });
+
+            // 今回の座席をバシッ！と確定！
+            const lockedCard = getSeatCardElement(key);
+            const finalNum = finalAssignments[key] !== undefined ? finalAssignments[key] : null;
+            lockSeatCardOnStage(lockedCard, finalNum);
+            soundFX.playSeatLock(idx, totalToLock);
+            triggerBoardShake(isFinalTrio);
+
+            els.stagePhasePill.textContent = `確定 ${idx + 1} / ${totalToLock}`;
+          }, revealElapsed);
+        });
+
+        // -------- Phase 4: フィナーレ（花火＆大量紙吹雪＆ファンファーレ＆祝福バナー） --------
+        const finaleStartMs = revealElapsed + 260;
+
+        scheduleStage(() => {
+          // 状態を正式保存
+          state.assignments = finalAssignments;
+          saveState();
+          pendingFinalAssignments = null;
+
+          els.stagePhasePill.textContent = '🎉 FINALE!! 🎉';
+          triggerBoardShake(true);
+          soundFX.playFanfare();
+          fxCanvas.launchGrandFinale();
+
+          els.finaleSummaryText.textContent =
+            `全 ${state.activeNumbers.length}人 の新しい座席が決定しました！（固定席：${Object.keys(state.fixedSeats).length}席）`;
+          els.finaleOverlay.classList.remove('hidden');
+          els.finaleOverlay.classList.add('flex');
+          els.finaleBannerCard.classList.remove('animate-finale-banner');
+          void els.finaleBannerCard.offsetWidth;
+          els.finaleBannerCard.classList.add('animate-finale-banner');
+        }, finaleStartMs);
+
+        // 約3.6秒後に自動で通常ビューへスムーズに復帰（紙吹雪は余韻で舞い続ける）
+        scheduleStage(() => {
+          exitStageMode(true);
+          showToast('🎉 席替えが完了しました！', 'success');
+        }, finaleStartMs + 3600);
+      }
+
+      // ============================================================
+      // 13. 各種設定変更ハンドラ
+      // ============================================================
+      function updateGridSize(deltaRows, deltaCols) {
+        if (isShuffling) return;
+        const nextRows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, state.rows + deltaRows));
+        const nextCols = Math.min(MAX_COLS, Math.max(MIN_COLS, state.cols + deltaCols));
+        if (nextRows === state.rows && nextCols === state.cols) return;
+
+        state.rows = nextRows;
+        state.cols = nextCols;
+        const { removedFixedCount } = sanitizeSeatData();
+        saveState();
+        renderAll();
+        soundFX.playClick(620);
+
+        if (removedFixedCount > 0) {
+          showToast(`範囲外になった固定席 ${removedFixedCount}件 を解除しました。`, 'warning');
+        }
+      }
+
+      function setQuickStudentCount(count) {
+        if (isShuffling) return;
+        const clamped = Math.min(MAX_STUDENT_NO, Math.max(0, Math.floor(Number(count) || 0)));
+        const nextActive = [];
+        for (let i = 1; i <= clamped; i++) nextActive.push(i);
+
+        state.activeNumbers = nextActive;
+        const { removedFixedCount } = sanitizeSeatData();
+        saveState();
+        renderAll();
+
+        if (removedFixedCount > 0) {
+          showToast(`対象外になった出席番号の固定 ${removedFixedCount}件 を解除しました。`, 'warning');
+        }
+      }
+
+      function handleToggleSingleNumber(num) {
+        if (isShuffling) return;
+        const idx = state.activeNumbers.indexOf(num);
+        if (idx >= 0) {
+          state.activeNumbers.splice(idx, 1);
+          const { removedFixedCount } = sanitizeSeatData();
+          if (removedFixedCount > 0) {
+            showToast(`出席番号 ${num}番 を欠番にしたため固定を解除しました。`, 'warning');
+          }
+        } else {
+          state.activeNumbers.push(num);
+          state.activeNumbers.sort((a, b) => a - b);
+        }
+        saveState();
+        renderAll();
+        soundFX.playClick(idx >= 0 ? 480 : 760);
+      }
+
+      // ============================================================
+      // 14. イベントリスナー登録
+      // ============================================================
+      function bindEvents() {
+        // ドラッグ終了のグローバル監視
+        window.addEventListener('pointermove', handleGlobalPointerMove);
+        window.addEventListener('pointerup', handleGlobalPointerUp);
+        window.addEventListener('pointercancel', handleGlobalPointerUp);
+
+        // 効果音ON/OFF
+        els.btnSoundToggle.addEventListener('click', () => {
+          state.soundEnabled = !state.soundEnabled;
+          soundFX.setEnabled(state.soundEnabled);
+          if (state.soundEnabled) soundFX.playClick(820);
+          saveState();
+          renderControlsAndChecker();
+        });
+
+        // グリッドサイズ変更
+        els.btnColsDec.addEventListener('click', () => updateGridSize(0, -1));
+        els.btnColsInc.addEventListener('click', () => updateGridSize(0, 1));
+        els.btnRowsDec.addEventListener('click', () => updateGridSize(-1, 0));
+        els.btnRowsInc.addEventListener('click', () => updateGridSize(1, 0));
+
+        // 空席禁止チェックボックス
+        els.chkDisallowEmpty.addEventListener('change', (e) => {
+          state.disallowEmptySeats = e.target.checked;
+          saveState();
+          renderControlsAndChecker();
+        });
+
+        // 人数クイック設定
+        els.btnCountDec.addEventListener('click', () => setQuickStudentCount(state.activeNumbers.length - 1));
+        els.btnCountInc.addEventListener('click', () => setQuickStudentCount(state.activeNumbers.length + 1));
+        els.inputQuickCount.addEventListener('change', (e) => setQuickStudentCount(e.target.value));
+
+        // 個別出席番号パネル開閉
+        els.btnToggleNumberPanel.addEventListener('click', () => {
+          const isHidden = els.numberSelectionPanel.classList.contains('hidden');
+          els.numberSelectionPanel.classList.toggle('hidden', !isHidden);
+          els.btnToggleNumberPanel.setAttribute('aria-expanded', String(isHidden));
+          els.iconNumberPanelChevron.classList.toggle('rotate-180', isHidden);
+        });
+
+        els.btnSelectAllNumbers.addEventListener('click', () => {
+          if (isShuffling) return;
+          setQuickStudentCount(MAX_STUDENT_NO);
+          showToast('出席番号 1〜48番 をすべて選択しました。', 'info');
+        });
+        els.btnClearAllNumbers.addEventListener('click', () => {
+          if (isShuffling) return;
+          setQuickStudentCount(0);
+          showToast('出席番号をすべて解除しました。', 'info');
+        });
+
+        // 演出モード切り替え
+        els.effectModeBtns.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            if (isShuffling) return;
+            state.effectMode = btn.dataset.effectMode;
+            saveState();
+            renderControlsAndChecker();
+            soundFX.playClick(740);
+          });
+        });
+
+        // 編集モードタブ切り替え
+        els.tabModeToggle.addEventListener('click', () => {
+          if (isShuffling || state.editMode === 'toggleSeat') return;
+          state.editMode = 'toggleSeat';
+          saveState();
+          renderAll();
+          soundFX.playClick(680);
+        });
+        els.tabModeFix.addEventListener('click', () => {
+          if (isShuffling || state.editMode === 'fixSeat') return;
+          state.editMode = 'fixSeat';
+          saveState();
+          renderAll();
+          soundFX.playClick(780);
+        });
+
+        // 自動調整ボタン
+        els.btnAutoAdjust.addEventListener('click', autoAdjustSeatsToMatchStudents);
+
+        // メインシャッフルボタン
+        els.btnShuffle.addEventListener('click', executeShuffle);
+
+        // スキップ＆フィナーレ閉じる
+        els.btnSkipEffect.addEventListener('click', skipCurrentEffect);
+        els.btnCloseFinale.addEventListener('click', () => {
+          exitStageMode(true);
+          showToast('🎉 席替えが完了しました！', 'success');
+        });
+
+        // 視点切り替え
+        els.btnViewStudent.addEventListener('click', () => {
+          if (isShuffling || state.viewMode === 'student') return;
+          state.viewMode = 'student';
+          saveState();
+          renderAll();
+          soundFX.playClick(660);
+        });
+        els.btnViewTeacher.addEventListener('click', () => {
+          if (isShuffling || state.viewMode === 'teacher') return;
+          state.viewMode = 'teacher';
+          saveState();
+          renderAll();
+          soundFX.playClick(660);
+        });
+
+        // 固定以外クリア
+        els.btnClearUnfixed.addEventListener('click', () => {
+          if (isShuffling) return;
+          const next = {};
+          Object.entries(state.fixedSeats).forEach(([k, num]) => {
+            next[k] = Number(num);
+          });
+          state.assignments = next;
+          saveState();
+          renderAll();
+          showToast('固定席以外の配置をクリアしました。', 'info');
+        });
+
+        // 固定席すべて解除
+        els.btnClearAllFixed.addEventListener('click', () => {
+          if (isShuffling) return;
+          openConfirmModal(
+            '固定席をすべて解除しますか？',
+            '設定されているすべての出席番号の固定を解除します。',
+            () => {
+              state.fixedSeats = {};
+              saveState();
+              renderAll();
+              showToast('すべての固定席を解除しました。', 'info');
+            }
+          );
+        });
+
+        // 印刷
+        els.btnPrint.addEventListener('click', () => {
+          renderPrintMetadata();
+          window.print();
+        });
+
+        // すべてリセット
+        els.btnResetAll.addEventListener('click', () => {
+          if (isShuffling) return;
+          openConfirmModal(
+            '設定を初期状態に戻しますか？',
+            '横6列×縦7行・生徒35人（使う席35席）・固定席・配置をすべてリセットします。',
+            () => {
+              exitStageMode(false);
+              state = createDefaultState();
+              soundFX.setEnabled(state.soundEnabled);
+              saveState();
+              renderAll();
+              showToast('すべての設定を初期状態に戻しました。', 'success');
+            }
+          );
+        });
+
+        // 固定モーダルイベント
+        els.btnCloseFixModal.addEventListener('click', closeFixModal);
+        els.btnCancelFixModal.addEventListener('click', closeFixModal);
+        els.btnSaveFixModal.addEventListener('click', saveFixModal);
+        els.fixModal.addEventListener('click', (e) => {
+          if (e.target === els.fixModal) closeFixModal();
+        });
+        els.modalStudentSelect.addEventListener('change', () => {
+          validateFixModalSelection();
+          renderFixModalPicker();
+        });
+        els.btnModalUnfix.addEventListener('click', () => {
+          els.modalStudentSelect.value = '';
+          validateFixModalSelection();
+          renderFixModalPicker();
+        });
+
+        // 確認モーダルイベント
+        els.btnConfirmCancel.addEventListener('click', closeConfirmModal);
+        els.confirmModal.addEventListener('click', (e) => {
+          if (e.target === els.confirmModal) closeConfirmModal();
+        });
+        els.btnConfirmOk.addEventListener('click', () => {
+          const cb = pendingConfirmCallback;
+          closeConfirmModal();
+          if (typeof cb === 'function') cb();
+        });
+
+        // Escキーでモーダルを閉じる
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            if (!els.confirmModal.classList.contains('hidden')) closeConfirmModal();
+            else if (!els.fixModal.classList.contains('hidden')) closeFixModal();
+          }
+        });
+      }
+
+      // ============================================================
+      // 15. 起動
+      // ============================================================
+      window.addEventListener('DOMContentLoaded', () => {
+        loadState();
+        bindEvents();
+        renderAll();
+      });
+    })();
+  </script>
+</body>
+</html>
